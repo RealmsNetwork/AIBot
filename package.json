@@ -1,0 +1,34 @@
+{
+  "name": "@realmsnetwork/ai-bot",
+  "version": "1.0.0",
+  "description": "An open-source Discord bot with AI chat, AI roasts, configurable providers, and production-minded defaults.",
+  "license": "MIT",
+  "private": false,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy:commands": "node scripts/deploy-commands.js",
+    "check:deps": "node scripts/check-deps.js",
+    "check": "npm run check:deps && node --check src/index.js && node --check src/ai.js && node --check src/commands.js && node --check scripts/deploy-commands.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "discord.js": "^14.22.1",
+    "dotenv": "^16.6.1",
+    "openai": "^5.20.0"
+  },
+  "devDependencies": {},
+  "overrides": {},
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "ai",
+    "chatbot",
+    "roast",
+    "realmsnetwork"
+  ]
+}
