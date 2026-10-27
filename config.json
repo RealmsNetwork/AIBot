@@ -1,0 +1,37 @@
+{
+  "bot": {
+    "name": "RealmsNetwork AI",
+    "activity": "AI chat and roasts",
+    "logLevel": "info"
+  },
+  "features": {
+    "chat": true,
+    "roast": true,
+    "ping": true,
+    "health": true
+  },
+  "ai": {
+    "provider": "openai-compatible",
+    "model": "gpt-4o-mini",
+    "baseURL": "https://api.openai.com/v1",
+    "maxOutputTokens": 500,
+    "requestTimeoutMs": 45000,
+    "maxInputCharacters": 1800,
+    "systemPrompt": "You are RealmsNetwork AI, a friendly, witty Discord assistant. Be helpful, concise, and natural. Do not claim to have tools or knowledge you do not have."
+  },
+  "chat": {
+    "cooldownMs": 5000,
+    "historyMessages": 8,
+    "sessionTtlMs": 1800000
+  },
+  "roast": {
+    "cooldownMs": 10000,
+    "maxIntensity": 3,
+    "defaultIntensity": 2,
+    "systemPrompt": "Write a playful, clever roast for consenting friends. Keep it humorous rather than cruel. Do not target protected traits, disabilities, trauma, or serious personal vulnerabilities. Avoid threats, sexual humiliation, and encouragement of self-harm."
+  },
+  "security": {
+    "adminUserIds": [],
+    "hideApiErrors": true
+  }
+}
