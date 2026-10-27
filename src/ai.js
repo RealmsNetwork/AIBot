@@ -1,6 +1,7 @@
 const OpenAI = require("openai");
 
 const sessions = new Map();
+const MAX_SESSIONS = 5000;
 
 function createAIClient(config) {
   const apiKey = process.env.AI_API_KEY;
@@ -22,21 +23,30 @@ function sessionKey(interaction) {
 
 function getHistory(key, ttlMs) {
   const now = Date.now();
-  const current = sessions.get(key);
-  if (!current || now - current.updatedAt > ttlMs) {
-    sessions.set(key, { updatedAt: now, messages: [] });
+  for (const [sessionId, session] of sessions) {
+    if (now - session.updatedAt > ttlMs) sessions.delete(sessionId);
   }
-  const session = sessions.get(key);
+
+  let session = sessions.get(key);
+  if (!session) {
+    while (sessions.size >= MAX_SESSIONS) {
+      const oldestKey = sessions.keys().next().value;
+      if (oldestKey === undefined) break;
+      sessions.delete(oldestKey);
+    }
+    session = { updatedAt: now, messages: [] };
+    sessions.set(key, session);
+  }
   session.updatedAt = now;
   return session.messages;
 }
 
 async function chat(client, config, interaction, input) {
+  if (!client) throw new Error("AI provider is not configured.");
   const maxInput = config.ai.maxInputCharacters;
   const message = String(input || "").trim().slice(0, maxInput);
   if (!message) throw new Error("Please enter a message.");
-  const key = sessionKey(interaction);
-  const history = getHistory(key, config.chat.sessionTtlMs);
+  const history = getHistory(sessionKey(interaction), config.chat.sessionTtlMs);
   const prior = history.slice(-(config.chat.historyMessages * 2));
   const response = await client.chat.completions.create({
     model: process.env.AI_MODEL || config.ai.model,
@@ -56,6 +66,7 @@ async function chat(client, config, interaction, input) {
 }
 
 async function roast(client, config, targetName, intensity) {
+  if (!client) throw new Error("AI provider is not configured.");
   const level = Math.max(1, Math.min(config.roast.maxIntensity, intensity || config.roast.defaultIntensity));
   const response = await client.chat.completions.create({
     model: process.env.AI_MODEL || config.ai.model,
