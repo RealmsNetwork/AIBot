@@ -1,92 +1,100 @@
-const OpenAI = require("openai");
+const { generateText } = require("ai");
 
-const sessions = new Map();
-const MAX_SESSIONS = 5000;
+const providerModules = {
+  openai: async () => import("@ai-sdk/openai"),
+  google: async () => import("@ai-sdk/google"),
+  xai: async () => import("@ai-sdk/xai"),
+  anthropic: async () => import("@ai-sdk/anthropic")
+};
 
-function createAIClient(config) {
-  const apiKey = process.env.AI_API_KEY;
-  if (!apiKey) throw new Error("AI_API_KEY is not configured.");
+function getProviderConfig(config) {
+  const name = String(process.env.AI_PROVIDER || config.ai.provider || "openai").toLowerCase();
+  const selected = config.providers[name];
+  if (!selected && !["openai", "google", "xai", "anthropic"].includes(name)) {
+    throw new Error(`Unknown AI provider "${name}". Configure it under config.providers.`);
+  }
+  const defaults = {
+    openai: { apiKeyEnv: "OPENAI_API_KEY", model: "gpt-4o-mini", baseURL: "" },
+    google: { apiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", model: "gemini-2.5-flash", baseURL: "" },
+    xai: { apiKeyEnv: "XAI_API_KEY", model: "grok-3-mini", baseURL: "" },
+    anthropic: { apiKeyEnv: "ANTHROPIC_API_KEY", model: "claude-3-5-haiku-latest", baseURL: "" }
+  };
+  const provider = { ...(defaults[name] || {}), ...(selected || {}) };
+  provider.name = name;
+  provider.model = process.env.AI_MODEL || config.ai.model || provider.model;
+  if (process.env.AI_PROVIDER && !process.env.AI_MODEL && selected?.model) provider.model = selected.model;
+  provider.baseURL = process.env.AI_BASE_URL || provider.baseURL || config.ai.baseURL || "";
+  return provider;
+}
 
-  return new OpenAI({
+async function resolveModel(config) {
+  const provider = getProviderConfig(config);
+  const apiKey = process.env[provider.apiKeyEnv] || (provider.apiKeyOptional ? "ollama" : "");
+  if (!apiKey) {
+    throw new Error(`Missing ${provider.apiKeyEnv}. Set it in .env for provider "${provider.name}".`);
+  }
+
+  if (provider.name === "google") {
+    const mod = await providerModules.google();
+    const factory = mod.createGoogleGenerativeAI || mod.google;
+    const instance = mod.createGoogleGenerativeAI
+      ? factory({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) })
+      : factory;
+    return { model: instance(provider.model), provider };
+  }
+  if (provider.name === "anthropic") {
+    const mod = await providerModules.anthropic();
+    const instance = mod.createAnthropic({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) });
+    return { model: instance(provider.model), provider };
+  }
+  if (provider.name === "xai") {
+    const mod = await providerModules.xai();
+    const instance = mod.createXai({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) });
+    return { model: instance(provider.model), provider };
+  }
+
+  const mod = await providerModules.openai();
+  const instance = mod.createOpenAI({
     apiKey,
-    baseURL: process.env.AI_BASE_URL || config.ai.baseURL,
-    timeout: config.ai.requestTimeoutMs,
-    maxRetries: 1
+    ...(provider.baseURL ? { baseURL: provider.baseURL } : {})
   });
+  return { model: instance.chat(provider.model), provider };
 }
 
-function sessionKey(interaction) {
-  return interaction.guildId
-    ? `${interaction.guildId}:${interaction.channelId}:${interaction.user.id}`
-    : `dm:${interaction.user.id}`;
+async function generateReply(config, messages, mode = "chat") {
+  const { model, provider } = await resolveModel(config);
+  const system = mode === "roast"
+    ? config.roast.systemPrompt
+    : config.ai.systemPrompt;
+  const result = await generateText({
+    model,
+    system,
+    messages,
+    maxOutputTokens: config.ai.maxOutputTokens,
+    abortSignal: AbortSignal.timeout(config.ai.requestTimeoutMs)
+  });
+  if (!result.text || !result.text.trim()) throw new Error("The AI provider returned an empty response.");
+  return { text: result.text.trim(), provider: provider.name, model: provider.model };
 }
 
-function getHistory(key, ttlMs) {
-  const now = Date.now();
-  for (const [sessionId, session] of sessions) {
-    if (now - session.updatedAt > ttlMs) sessions.delete(sessionId);
+function toModelMessages(discordMessages, config, currentMessage) {
+  const chronological = [...discordMessages].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  const result = [];
+  for (const message of chronological) {
+    if (!message.content?.trim() && !message.attachments?.size) continue;
+    const isAssistant = Boolean(message.author?.bot && message.author.id === currentMessage.client.user.id);
+    if (message.author?.bot && !isAssistant) continue;
+    const timestamp = new Date(message.createdTimestamp).toISOString();
+    const author = message.member?.displayName || message.author?.globalName || message.author?.username || "Unknown";
+    const replyTo = message.reference?.messageId ? ` [replying to message ${message.reference.messageId}]` : "";
+    const attachmentText = message.attachments?.size
+      ? ` [attachments: ${[...message.attachments.values()].map(item => item.name || item.contentType || "file").join(", ")}]`
+      : "";
+    const datePrefix = config.conversation.includeTimestamps ? `[${timestamp}] ` : "";
+    const content = `${datePrefix}${author}${replyTo}: ${message.content || ""}${attachmentText}`.slice(0, config.conversation.maxMessageCharacters);
+    result.push({ role: isAssistant ? "assistant" : "user", content });
   }
-
-  let session = sessions.get(key);
-  if (!session) {
-    while (sessions.size >= MAX_SESSIONS) {
-      const oldestKey = sessions.keys().next().value;
-      if (oldestKey === undefined) break;
-      sessions.delete(oldestKey);
-    }
-    session = { updatedAt: now, messages: [] };
-    sessions.set(key, session);
-  }
-  session.updatedAt = now;
-  return session.messages;
+  return result;
 }
 
-async function chat(client, config, interaction, input) {
-  if (!client) throw new Error("AI provider is not configured.");
-  const maxInput = config.ai.maxInputCharacters;
-  const message = String(input || "").trim().slice(0, maxInput);
-  if (!message) throw new Error("Please enter a message.");
-  const history = getHistory(sessionKey(interaction), config.chat.sessionTtlMs);
-  const prior = history.slice(-(config.chat.historyMessages * 2));
-  const response = await client.chat.completions.create({
-    model: process.env.AI_MODEL || config.ai.model,
-    messages: [
-      { role: "system", content: config.ai.systemPrompt },
-      ...prior,
-      { role: "user", content: message }
-    ],
-    max_tokens: config.ai.maxOutputTokens
-  });
-  const answer = response.choices?.[0]?.message?.content?.trim();
-  if (!answer) throw new Error("The AI provider returned an empty response.");
-  history.push({ role: "user", content: message }, { role: "assistant", content: answer });
-  const maxHistory = Math.max(2, config.chat.historyMessages * 2);
-  if (history.length > maxHistory) history.splice(0, history.length - maxHistory);
-  return answer;
-}
-
-async function roast(client, config, targetName, intensity) {
-  if (!client) throw new Error("AI provider is not configured.");
-  const level = Math.max(1, Math.min(config.roast.maxIntensity, intensity || config.roast.defaultIntensity));
-  const response = await client.chat.completions.create({
-    model: process.env.AI_MODEL || config.ai.model,
-    messages: [
-      { role: "system", content: config.roast.systemPrompt },
-      { role: "user", content: `Write one funny Discord roast for ${targetName}. Intensity ${level}/3. Keep it short, original, and non-hateful. Do not make claims about their real life.` }
-    ],
-    max_tokens: Math.min(220, config.ai.maxOutputTokens)
-  });
-  const answer = response.choices?.[0]?.message?.content?.trim();
-  if (!answer) throw new Error("The AI provider returned an empty response.");
-  return answer;
-}
-
-function clearHistory(interaction) {
-  return sessions.delete(sessionKey(interaction));
-}
-
-function sessionCount() {
-  return sessions.size;
-}
-
-module.exports = { createAIClient, chat, roast, clearHistory, sessionCount };
+module.exports = { generateReply, toModelMessages, getProviderConfig };
