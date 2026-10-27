@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+config.local.json
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+# Runtime state and local data
+data/
+*.sqlite
+*.sqlite3
+# Build and coverage
+coverage/
+dist/
+build/
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
