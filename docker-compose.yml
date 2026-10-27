@@ -1,0 +1,17 @@
+services:
+  aibot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: realmsnetwork-aibot
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
