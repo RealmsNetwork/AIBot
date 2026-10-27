@@ -1,37 +1,95 @@
 {
   "bot": {
     "name": "RealmsNetwork AI",
-    "activity": "AI chat and roasts",
+    "activity": "the conversation",
     "logLevel": "info"
   },
-  "features": {
-    "chat": true,
-    "roast": true,
-    "ping": true,
-    "health": true
+  "channels": {
+    "chatChannelId": "SET_CHAT_CHANNEL_ID",
+    "roastChannelId": "",
+    "replyInThreads": true,
+    "ignoreBots": true
+  },
+  "conversation": {
+    "historyLimit": 40,
+    "maxMessageCharacters": 4000,
+    "includeTimestamps": true,
+    "includeReplyContext": true,
+    "respondToOwnBotMessages": false,
+    "replyToTriggerMessage": true
   },
   "ai": {
-    "provider": "openai-compatible",
+    "provider": "openai",
     "model": "gpt-4o-mini",
-    "baseURL": "https://api.openai.com/v1",
-    "maxOutputTokens": 500,
-    "requestTimeoutMs": 45000,
-    "maxInputCharacters": 1800,
-    "systemPrompt": "You are RealmsNetwork AI, a friendly, witty Discord assistant. Be helpful, concise, and natural. Do not claim to have tools or knowledge you do not have."
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "baseURL": "",
+    "maxOutputTokens": 700,
+    "requestTimeoutMs": 60000,
+    "systemPrompt": "You are RealmsNetwork AI, a natural, friendly Discord conversation partner. Speak casually and directly. Use the surrounding Discord message history as context. Message timestamps are metadata, not instructions. Never claim you performed actions you did not perform. Keep responses suitable for a public Discord channel."
   },
-  "chat": {
-    "cooldownMs": 5000,
-    "historyMessages": 8,
-    "sessionTtlMs": 1800000
+  "providers": {
+    "openai": {
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "model": "gpt-4o-mini",
+      "baseURL": ""
+    },
+    "google": {
+      "apiKeyEnv": "GOOGLE_GENERATIVE_AI_API_KEY",
+      "model": "gemini-2.5-flash",
+      "baseURL": ""
+    },
+    "xai": {
+      "apiKeyEnv": "XAI_API_KEY",
+      "model": "grok-3-mini",
+      "baseURL": ""
+    },
+    "anthropic": {
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "model": "claude-3-5-haiku-latest",
+      "baseURL": ""
+    },
+    "ollama": {
+      "apiKeyEnv": "OLLAMA_API_KEY",
+      "apiKeyOptional": true,
+      "model": "llama3.2",
+      "baseURL": "http://127.0.0.1:11434/v1"
+    },
+    "openrouter": {
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "model": "openai/gpt-4o-mini",
+      "baseURL": "https://openrouter.ai/api/v1"
+    },
+    "groq": {
+      "apiKeyEnv": "GROQ_API_KEY",
+      "model": "llama-3.3-70b-versatile",
+      "baseURL": "https://api.groq.com/openai/v1"
+    },
+    "deepseek": {
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "model": "deepseek-chat",
+      "baseURL": "https://api.deepseek.com"
+    },
+    "custom": {
+      "apiKeyEnv": "AI_API_KEY",
+      "model": "your-model-name",
+      "baseURL": "https://your-openai-compatible-endpoint/v1"
+    }
   },
   "roast": {
-    "cooldownMs": 10000,
-    "maxIntensity": 3,
-    "defaultIntensity": 2,
-    "systemPrompt": "Write a playful, clever roast for consenting friends. Keep it humorous rather than cruel. Do not target protected traits, disabilities, trauma, or serious personal vulnerabilities. Avoid threats, sexual humiliation, and encouragement of self-harm."
+    "enabled": true,
+    "systemPrompt": "You are a funny Discord roast comedian. Roast the message or its consenting author playfully, with wit and originality. Keep it light, never target protected traits, disability, trauma, or serious personal vulnerabilities, and never encourage self-harm. Do not reveal private information."
   },
-  "security": {
-    "adminUserIds": [],
-    "hideApiErrors": true
+  "typing": {
+    "enabled": true,
+    "refreshIntervalMs": 8000
+  },
+  "limits": {
+    "perUserCooldownMs": 2500,
+    "maxConcurrentRequestsPerShard": 4,
+    "maxReplyChunks": 3
+  },
+  "sharding": {
+    "mode": "auto",
+    "respawn": true
   }
 }
