@@ -33,8 +33,13 @@ function log(level, message, details = "") {
 }
 
 function onCooldown(interaction, command, duration) {
-  const key = `${interaction.user.id}:${command}`;
   const now = Date.now();
+  if (cooldowns.size > 2000) {
+    for (const [key, expiry] of cooldowns) {
+      if (expiry <= now) cooldowns.delete(key);
+    }
+  }
+  const key = `${interaction.user.id}:${command}`;
   const until = cooldowns.get(key) || 0;
   if (until > now) return Math.ceil((until - now) / 1000);
   cooldowns.set(key, now + duration);
@@ -139,9 +144,6 @@ try {
   aiClient = null;
 }
 
-// Keep the bot online for status commands even when AI credentials are not configured.
-const originalChat = chat;
-const originalRoast = roast;
 client.login(process.env.DISCORD_TOKEN).catch(error => {
   log("error", "Discord login failed", error.message);
   process.exitCode = 1;
