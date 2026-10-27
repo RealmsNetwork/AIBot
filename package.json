@@ -2,7 +2,7 @@
   "name": "@realmsnetwork/ai-bot",
   "version": "2.0.0",
   "description": "Automatic channel-based Discord AI with provider adapters, Discord-native conversation history, and sharding.",
-  "license": "GPL-3.0-only",
+  "license": "MIT",
   "private": false,
   "type": "commonjs",
   "engines": {
