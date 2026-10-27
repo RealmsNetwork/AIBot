@@ -1,5 +1,3 @@
-const { generateText } = require("ai");
-
 const providerModules = {
   openai: async () => import("@ai-sdk/openai"),
   google: async () => import("@ai-sdk/google"),
@@ -9,26 +7,40 @@ const providerModules = {
 
 function getProviderConfig(config) {
   const name = String(process.env.AI_PROVIDER || config.ai.provider || "openai").toLowerCase();
-  const selected = config.providers[name];
-  if (!selected && !["openai", "google", "xai", "anthropic"].includes(name)) {
-    throw new Error(`Unknown AI provider "${name}". Configure it under config.providers.`);
+  if (name === "gateway") {
+    return {
+      name,
+      apiKeyEnv: "AI_GATEWAY_API_KEY",
+      model: process.env.AI_MODEL || config.ai.model || "openai/gpt-4o-mini",
+      baseURL: ""
+    };
   }
+  const selected = config.providers[name];
   const defaults = {
     openai: { apiKeyEnv: "OPENAI_API_KEY", model: "gpt-4o-mini", baseURL: "" },
     google: { apiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", model: "gemini-2.5-flash", baseURL: "" },
     xai: { apiKeyEnv: "XAI_API_KEY", model: "grok-3-mini", baseURL: "" },
     anthropic: { apiKeyEnv: "ANTHROPIC_API_KEY", model: "claude-3-5-haiku-latest", baseURL: "" }
   };
+  if (!selected && !defaults[name]) {
+    throw new Error(`Unknown AI provider "${name}". Configure it under config.providers.`);
+  }
   const provider = { ...(defaults[name] || {}), ...(selected || {}) };
   provider.name = name;
-  provider.model = process.env.AI_MODEL || config.ai.model || provider.model;
-  if (process.env.AI_PROVIDER && !process.env.AI_MODEL && selected?.model) provider.model = selected.model;
+  provider.model = process.env.AI_MODEL || provider.model || config.ai.model;
   provider.baseURL = process.env.AI_BASE_URL || provider.baseURL || config.ai.baseURL || "";
   return provider;
 }
 
 async function resolveModel(config) {
   const provider = getProviderConfig(config);
+  if (provider.name === "gateway") {
+    const key = process.env[provider.apiKeyEnv];
+    if (!key) throw new Error("Missing AI_GATEWAY_API_KEY for the gateway provider.");
+    const { gateway } = await import("ai");
+    return { model: gateway(provider.model), provider };
+  }
+
   const apiKey = process.env[provider.apiKeyEnv] || (provider.apiKeyOptional ? "ollama" : "");
   if (!apiKey) {
     throw new Error(`Missing ${provider.apiKeyEnv}. Set it in .env for provider "${provider.name}".`);
@@ -44,12 +56,18 @@ async function resolveModel(config) {
   }
   if (provider.name === "anthropic") {
     const mod = await providerModules.anthropic();
-    const instance = mod.createAnthropic({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) });
+    const factory = mod.createAnthropic || (() => mod.anthropic);
+    const instance = mod.createAnthropic
+      ? factory({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) })
+      : factory;
     return { model: instance(provider.model), provider };
   }
   if (provider.name === "xai") {
     const mod = await providerModules.xai();
-    const instance = mod.createXai({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) });
+    const factory = mod.createXai || (() => mod.xai);
+    const instance = mod.createXai
+      ? factory({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) })
+      : factory;
     return { model: instance(provider.model), provider };
   }
 
@@ -62,6 +80,7 @@ async function resolveModel(config) {
 }
 
 async function generateReply(config, messages, mode = "chat") {
+  const { generateText } = await import("ai");
   const { model, provider } = await resolveModel(config);
   const system = mode === "roast"
     ? config.roast.systemPrompt
