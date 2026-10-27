@@ -77,6 +77,26 @@
       "apiKeyEnv": "AI_API_KEY",
       "model": "your-model-name",
       "baseURL": "https://your-openai-compatible-endpoint/v1"
+    },
+    "perplexity": {
+      "apiKeyEnv": "PERPLEXITY_API_KEY",
+      "model": "sonar",
+      "baseURL": "https://api.perplexity.ai"
+    },
+    "mistral": {
+      "apiKeyEnv": "MISTRAL_API_KEY",
+      "model": "mistral-small-latest",
+      "baseURL": "https://api.mistral.ai/v1"
+    },
+    "together": {
+      "apiKeyEnv": "TOGETHER_API_KEY",
+      "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "baseURL": "https://api.together.xyz/v1"
+    },
+    "fireworks": {
+      "apiKeyEnv": "FIREWORKS_API_KEY",
+      "model": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+      "baseURL": "https://api.fireworks.ai/inference/v1"
     }
   },
   "roast": {
