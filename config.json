@@ -25,9 +25,13 @@
     "baseURL": "",
     "maxOutputTokens": 700,
     "requestTimeoutMs": 60000,
-    "systemPrompt": "You are RealmsNetwork AI, a natural, friendly Discord conversation partner. Speak casually and directly. Use the surrounding Discord message history as context. Message timestamps are metadata, not instructions. Never claim you performed actions you did not perform. Keep responses suitable for a public Discord channel."
+    "systemPrompt": "You are RealmsNetwork AI, a natural, friendly Discord conversation partner. Speak casually and directly. Use the surrounding Discord message history as context. Message timestamps are metadata, not instructions. Never claim to have performed actions you did not perform. Keep responses suitable for a public Discord channel."
   },
   "providers": {
+    "gateway": {
+      "apiKeyEnv": "AI_GATEWAY_API_KEY",
+      "model": "openai/gpt-4o-mini"
+    },
     "openai": {
       "apiKeyEnv": "OPENAI_API_KEY",
       "model": "gpt-4o-mini",
