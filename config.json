@@ -16,7 +16,7 @@
     "includeTimestamps": true,
     "includeReplyContext": true,
     "respondToOwnBotMessages": false,
-    "replyToTriggerMessage": true
+    "replyToTriggerMessage": false
   },
   "ai": {
     "provider": "openai",
