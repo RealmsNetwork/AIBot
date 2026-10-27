@@ -2,7 +2,7 @@
   "name": "@realmsnetwork/ai-bot",
   "version": "1.0.0",
   "description": "An open-source Discord bot with AI chat, AI roasts, configurable providers, and production-minded defaults.",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "private": false,
   "type": "commonjs",
   "engines": {
