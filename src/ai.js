@@ -48,8 +48,8 @@ async function resolveModel(config) {
 
   if (provider.name === "google") {
     const mod = await providerModules.google();
-    const factory = mod.createGoogleGenerativeAI || mod.google;
-    const instance = mod.createGoogleGenerativeAI
+    const factory = mod.createGoogle || mod.createGoogleGenerativeAI || mod.google;
+    const instance = (mod.createGoogle || mod.createGoogleGenerativeAI)
       ? factory({ apiKey, ...(provider.baseURL ? { baseURL: provider.baseURL } : {}) })
       : factory;
     return { model: instance(provider.model), provider };
