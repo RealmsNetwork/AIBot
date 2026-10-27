@@ -62,6 +62,10 @@ Select a provider and a model ID supported by that provider. Model availability,
 | `deepseek` | `DEEPSEEK_API_KEY` | DeepSeek API models |
 | `custom` | `AI_API_KEY` | Any compatible endpoint you configure |
 | `gateway` | `AI_GATEWAY_API_KEY` | AI SDK Gateway model IDs such as `provider/model` |
+| `perplexity` | `PERPLEXITY_API_KEY` | Perplexity API models |
+| `mistral` | `MISTRAL_API_KEY` | Mistral API models |
+| `together` | `TOGETHER_API_KEY` | Together AI hosted models |
+| `fireworks` | `FIREWORKS_API_KEY` | Fireworks AI hosted models |
 
 This supports many model families, not literally every model on the internet. A model must be available through the chosen provider and support text generation. A ChatGPT Free/Plus login is not an API credential; OpenAI API usage requires API access and billing where applicable. Ollama must be reachable from the bot process. Inside Docker, `127.0.0.1` points to the container, so configure the correct host address for Ollama.
 
@@ -106,4 +110,4 @@ The container uses a read-only root filesystem, drops Linux capabilities, and en
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
