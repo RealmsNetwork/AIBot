@@ -104,13 +104,15 @@ function toModelMessages(discordMessages, config, currentMessage) {
     const isAssistant = Boolean(message.author?.bot && message.author.id === currentMessage.client.user.id);
     if (message.author?.bot && !isAssistant) continue;
     const timestamp = new Date(message.createdTimestamp).toISOString();
-    const author = message.member?.displayName || message.author?.globalName || message.author?.username || "Unknown";
-    const replyTo = message.reference?.messageId ? ` [replying to message ${message.reference.messageId}]` : "";
+    const username = message.author?.username || "unknown";
+    const displayName = message.member?.displayName || message.author?.globalName || username;
+    const author = displayName === username ? `@${username}` : `${displayName} (@${username})`;
+
     const attachmentText = message.attachments?.size
       ? ` [attachments: ${[...message.attachments.values()].map(item => item.name || item.contentType || "file").join(", ")}]`
       : "";
     const datePrefix = config.conversation.includeTimestamps ? `[${timestamp}] ` : "";
-    const content = `${datePrefix}${author}${replyTo}: ${message.content || ""}${attachmentText}`.slice(0, config.conversation.maxMessageCharacters);
+    const content = `${datePrefix}${author}: ${message.content || ""}${attachmentText}`.slice(0, config.conversation.maxMessageCharacters);
     result.push({ role: isAssistant ? "assistant" : "user", content });
   }
   return result;
