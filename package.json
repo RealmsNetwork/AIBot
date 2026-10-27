@@ -1,7 +1,7 @@
 {
   "name": "@realmsnetwork/ai-bot",
-  "version": "1.0.0",
-  "description": "An open-source Discord bot with AI chat, AI roasts, configurable providers, and production-minded defaults.",
+  "version": "2.0.0",
+  "description": "Automatic channel-based Discord AI with provider adapters, Discord-native conversation history, and sharding.",
   "license": "GPL-3.0-only",
   "private": false,
   "type": "commonjs",
@@ -9,26 +9,31 @@
     "node": ">=20.18.0"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "deploy:commands": "node scripts/deploy-commands.js",
+    "start": "node src/manager.js",
+    "start:worker": "node src/index.js",
+    "dev": "node --watch src/manager.js",
     "check:deps": "node scripts/check-deps.js",
-    "check": "npm run check:deps && node --check src/index.js && node --check src/ai.js && node --check src/commands.js && node --check scripts/deploy-commands.js",
+    "check": "npm run check:deps && node --check src/index.js && node --check src/ai.js && node --check src/manager.js",
     "test": "node --test"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.0",
+    "@ai-sdk/google": "^2.0.0",
+    "@ai-sdk/openai": "^2.0.0",
+    "@ai-sdk/xai": "^2.0.0",
+    "ai": "^6.0.0",
     "discord.js": "^14.22.1",
-    "dotenv": "^16.6.1",
-    "openai": "^5.20.0"
+    "dotenv": "^16.6.1"
   },
-  "devDependencies": {},
-  "overrides": {},
   "keywords": [
     "discord",
     "discord-bot",
     "ai",
     "chatbot",
-    "roast",
+    "ollama",
+    "gemini",
+    "grok",
+    "openai",
     "realmsnetwork"
   ]
 }
