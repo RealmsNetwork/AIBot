@@ -1,63 +1,88 @@
 # RealmsNetwork AIBot
 
-An open-source Discord bot with AI chat, playful AI roasts, slash commands, configurable AI providers, dependency checks, and CI.
+Open-source, automatic channel-based Discord AI. No slash commands and no database: the bot reads recent messages directly from Discord, builds a timestamped conversation, and replies to the message that triggered it.
 
 ## Features
 
-- `/chat` — AI chat with short, per-user conversation context.
-- `/roast` — playful AI roasts for yourself or a friend.
-- `/clear-chat` — clear your conversation context.
-- `/ping` — check Discord gateway latency.
-- `/health` — inspect runtime and AI configuration status.
-- OpenAI-compatible API endpoint configuration.
-- Configurable prompts, cooldowns, model, response limits, and feature toggles.
-- Dependency integrity checker and automated CI checks.
-- Dockerfile and hardened Docker Compose deployment.
-- No privileged Discord gateway intents required for the included commands.
+- **Automatic chat channel:** eligible new messages in the configured channel trigger AI replies.
+- **Automatic roast channel:** optionally configure a separate channel whose messages receive playful roast-style replies.
+- **Discord-native history:** fetches recent messages from the channel each time; human messages become model user turns and the bot own replies become assistant turns.
+- **Dates and times:** includes ISO 8601 UTC timestamps, author names, reply references, and attachment names in context.
+- **Typing indicator:** shows and refreshes Discord typing while the model is working.
+- **Sharding:** starts Discord.js ShardingManager with automatic shard count by default and worker respawning.
+- **Provider adapters:** direct OpenAI, Google Gemini, xAI Grok, Anthropic, and OpenAI-compatible endpoints such as Ollama, OpenRouter, Groq, DeepSeek, and custom providers.
+- **AI Gateway:** optional unified model routing through AI SDK Gateway for supported providers and models.
+- `.gitignore`, config, dependency checker, CI, Docker, tests, security policy, and contribution guide.
 
 ## Requirements
 
-- Node.js 20.18 or newer, or Docker.
-- A Discord application and bot token.
-- An API key for an OpenAI-compatible AI provider.
+- Node.js 22 or newer.
+- Discord bot token.
+- API key for the chosen provider, unless using local Ollama.
 
-## Quick start
+## Discord setup
 
-1. Clone and install:
+1. Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Enable **Message Content Intent** under the bot privileged gateway intents. The bot needs this to read message text.
+3. Invite it with the `bot` scope and permissions to view the selected channel, read message history, send messages, and send messages in threads if needed. It also needs permission to send typing indicators.
+4. Copy the channel ID with Discord Developer Mode enabled.
 
-   ```bash
-   git clone https://github.com/RealmsNetwork/AIBot.git
-   cd AIBot
-   npm install
-   ```
-
-2. Copy `.env.example` to `.env` and set `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `AI_API_KEY`. Optionally set `DISCORD_GUILD_ID` to register commands to a test server first.
-
-3. Edit `config.json` to customize the model, prompts, cooldowns, and enabled commands. `AI_BASE_URL` and `AI_MODEL` environment variables override the matching config values.
-
-4. In the Discord Developer Portal, invite the bot with the `bot` and `applications.commands` scopes. The included commands need no privileged gateway intents.
-
-5. Register slash commands and start the bot:
-
-   ```bash
-   npm run deploy:commands
-   npm start
-   ```
-
-For development, run `npm run dev`.
-
-## Docker deployment
-
-Create `.env` using `.env.example`, then register commands once from a local Node.js install with `npm run deploy:commands`. Build and start the container:
+## Install and configure
 
 ```bash
-docker compose up -d --build
-docker compose logs -f aibot
+git clone https://github.com/RealmsNetwork/AIBot.git
+cd AIBot
+npm install
+cp .env.example .env
 ```
 
-The Compose service uses a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, and restarts unless stopped. Keep `.env` private.
+Set `DISCORD_TOKEN` in `.env`. Set `channels.chatChannelId` in `config.json` or `CHAT_CHANNEL_ID` in `.env`. Optionally set `channels.roastChannelId` or `ROAST_CHANNEL_ID` for a separate automatic roast channel.
 
-## Dependency checker and tests
+Choose a provider in `config.json` at `ai.provider`, or override it with `AI_PROVIDER`. Set that provider API key and choose its model, then start:
+
+```bash
+npm start
+```
+
+The shard manager starts automatically. No slash commands need to be registered.
+
+## Providers and models
+
+Select a provider and a model ID supported by that provider. Model availability, pricing, and features are controlled by the provider and may change.
+
+| Provider | API key environment variable | Notes |
+|---|---|---|
+| `openai` | `OPENAI_API_KEY` | OpenAI API models, including GPT models available to your API account |
+| `google` | `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini API models |
+| `xai` | `XAI_API_KEY` | Grok API models |
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude API models |
+| `ollama` | Optional `OLLAMA_API_KEY` | Local Ollama OpenAI-compatible endpoint |
+| `openrouter` | `OPENROUTER_API_KEY` | Models available through OpenRouter |
+| `groq` | `GROQ_API_KEY` | Models available through Groq |
+| `deepseek` | `DEEPSEEK_API_KEY` | DeepSeek API models |
+| `custom` | `AI_API_KEY` | Any compatible endpoint you configure |
+| `gateway` | `AI_GATEWAY_API_KEY` | AI SDK Gateway model IDs such as `provider/model` |
+
+This supports many model families, not literally every model on the internet. A model must be available through the chosen provider and support text generation. A ChatGPT Free/Plus login is not an API credential; OpenAI API usage requires API access and billing where applicable. Ollama must be reachable from the bot process. Inside Docker, `127.0.0.1` points to the container, so configure the correct host address for Ollama.
+
+## Conversation behavior
+
+- The bot replies automatically to new human messages in the configured chat channel.
+- It fetches up to `conversation.historyLimit` recent channel messages for each reply and orders them chronologically.
+- Each message includes its timestamp, author, text, and reply reference when available.
+- The bot own previous messages are sent as assistant turns; human messages are sent as user turns.
+- Conversation state is Discord message history, not a separate database. The history window is bounded to control latency and model context usage.
+- The bot can only read messages it has permission to view. Attachments are represented by names and metadata, not full contents.
+- Other bots are ignored by default, and the bot never responds to its own messages.
+- A separate roast channel uses the roast prompt automatically.
+- Typing indicators refresh during long requests. Replies are split into Discord-safe chunks.
+- Cooldowns and concurrency limits are per shard and held in memory.
+
+## Configuration
+
+See `config.json` for provider models, system prompts, channel IDs, history length, timestamps, typing, roast behavior, and request limits. Environment variables override the main provider and channel settings. Never commit `.env` or API keys.
+
+## Dependency checks and tests
 
 ```bash
 npm run check:deps
@@ -66,26 +91,19 @@ npm test
 npm audit --omit=dev
 ```
 
-Run `npm install` and commit the generated `package-lock.json` to make deployments reproducible and allow CI to use `npm ci`. CI checks dependency integrity, JavaScript syntax, tests, and production dependency advisories.
+Run `npm install` and commit the generated `package-lock.json` for reproducible installs. CI checks dependencies, syntax, tests, and production dependency advisories.
 
-## Configuration
+## Docker
 
-Never put secrets in `config.json`. Store tokens and provider keys in environment variables, and never commit `.env`.
+Configure `.env`, then run:
 
-- `AI_BASE_URL`: OpenAI-compatible API base URL.
-- `AI_MODEL`: model identifier supported by your provider.
-- `DISCORD_GUILD_ID`: optional test guild for faster command updates.
-- `security.adminUserIds`: reserved for future owner-only commands; current commands do not expose privileged admin actions.
+```bash
+docker compose up -d --build
+docker compose logs -f aibot
+```
 
-## Production notes
-
-- Conversation history is held in process memory and is lost on restart. It is separated by guild, channel, and user.
-- Cooldowns are per process. Multi-replica deployments need a shared rate-limit store.
-- Keep the bot running under a process manager or container restart policy.
-- Review your AI provider's privacy and retention policies before sending user messages to it.
-- AI output is untrusted; automatic mention parsing is disabled on generated replies.
-- Test in a private development server before inviting the bot elsewhere.
+The container uses a read-only root filesystem, drops Linux capabilities, and enables `no-new-privileges`. Ensure the configured AI endpoint is reachable from inside the container.
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+GPL-3.0-only. See [LICENSE](LICENSE).
