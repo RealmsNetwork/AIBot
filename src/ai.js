@@ -11,7 +11,7 @@ function getProviderConfig(config) {
     return {
       name,
       apiKeyEnv: "AI_GATEWAY_API_KEY",
-      model: process.env.AI_MODEL || config.ai.model || "openai/gpt-4o-mini",
+      model: process.env.AI_MODEL || config.providers?.gateway?.model || "openai/gpt-4o-mini",
       baseURL: ""
     };
   }
