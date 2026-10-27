@@ -33,8 +33,11 @@ function log(level, message, detail = "") {
 }
 
 function getMode(message) {
-  if (roastChannelId && message.channelId === roastChannelId) return "roast";
-  if (message.channelId === chatChannelId) return "chat";
+  const channelId = message.channelId;
+  const parentId = message.channel?.isThread?.() ? message.channel.parentId : null;
+  const matches = id => channelId === id || (config.channels.replyInThreads && parentId === id);
+  if (config.roast.enabled && roastChannelId && matches(roastChannelId)) return "roast";
+  if (matches(chatChannelId)) return "chat";
   return null;
 }
 
