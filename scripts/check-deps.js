@@ -3,20 +3,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const packagePath = path.join(root, "package.json");
-const lockPath = path.join(root, "package-lock.json");
-const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 let failed = false;
 
-for (const file of ["package.json", "src/index.js", "src/ai.js", "src/commands.js", ".gitignore", ".env.example", "config.json"]) {
+for (const file of ["package.json", "src/index.js", "src/manager.js", "src/ai.js", ".gitignore", ".env.example", "config.json", "README.md"]) {
   if (!fs.existsSync(path.join(root, file))) {
     console.error(`[missing] Required project file: ${file}`);
     failed = true;
   }
 }
 
+const lockPath = path.join(root, "package-lock.json");
 if (!fs.existsSync(lockPath)) {
-  console.warn("[warn] package-lock.json is missing. Run npm install and commit the lockfile for reproducible deployments.");
+  console.warn("[warn] package-lock.json is missing. Run npm install and commit the generated lockfile for reproducible deployments.");
 } else {
   try {
     const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
@@ -24,10 +23,9 @@ if (!fs.existsSync(lockPath)) {
       console.error("[error] package-lock.json name/version does not match package.json.");
       failed = true;
     }
-    for (const [name, version] of Object.entries(pkg.dependencies || {})) {
-      const locked = lock.packages?.[`node_modules/${name}`]?.version;
-      if (!locked) {
-        console.error(`[error] Dependency missing from lockfile: ${name} (${version})`);
+    for (const name of Object.keys(pkg.dependencies || {})) {
+      if (!lock.packages?.[`node_modules/${name}`]) {
+        console.error(`[error] Dependency missing from lockfile: ${name}`);
         failed = true;
       }
     }
@@ -60,9 +58,7 @@ if (outdated.stdout) {
     const entries = Object.entries(report);
     if (entries.length) {
       console.warn("[update] Dependency updates are available:");
-      for (const [name, versions] of entries) {
-        console.warn(`  - ${name}: installed ${versions.current}, wanted ${versions.wanted}, latest ${versions.latest}`);
-      }
+      for (const [name, versions] of entries) console.warn(`  - ${name}: installed ${versions.current}, wanted ${versions.wanted}, latest ${versions.latest}`);
     } else {
       console.log("[ok] No outdated dependencies reported.");
     }
