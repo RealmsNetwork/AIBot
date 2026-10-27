@@ -2,149 +2,187 @@ require("dotenv").config();
 
 const fs = require("node:fs");
 const path = require("node:path");
-const {
-  Client,
-  Events,
-  GatewayIntentBits,
-  ActivityType
-} = require("discord.js");
-const { createAIClient, chat, roast, clearHistory, sessionCount } = require("./ai");
+const { Client, Events, GatewayIntentBits, ActivityType } = require("discord.js");
+const { generateReply, toModelMessages } = require("./ai");
 
-const configPath = path.join(process.cwd(), "config.json");
-const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const requiredEnv = ["DISCORD_TOKEN", "DISCORD_CLIENT_ID"];
-for (const key of requiredEnv) {
-  if (!process.env[key]) {
-    console.error(`[startup] Missing required environment variable: ${key}`);
-    process.exit(1);
-  }
+const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"));
+const chatChannelId = process.env.CHAT_CHANNEL_ID || config.channels.chatChannelId;
+const roastChannelId = process.env.ROAST_CHANNEL_ID || config.channels.roastChannelId;
+const token = process.env.DISCORD_TOKEN;
+
+if (!token) {
+  console.error("[startup] DISCORD_TOKEN is missing.");
+  process.exit(1);
+}
+if (!chatChannelId || chatChannelId === "SET_CHAT_CHANNEL_ID") {
+  console.error("[startup] Set channels.chatChannelId in config.json or CHAT_CHANNEL_ID in .env.");
+  process.exit(1);
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  allowedMentions: { parse: [] }
+});
 const cooldowns = new Map();
-let aiClient;
+let activeRequests = 0;
+const inFlight = new Set();
 
-function log(level, message, details = "") {
-  const allowed = ["error", "warn", "info", "debug"];
-  const configured = allowed.includes(config.bot.logLevel) ? config.bot.logLevel : "info";
-  if (allowed.indexOf(level) <= allowed.indexOf(configured)) {
-    console[level === "debug" ? "log" : level](`[${new Date().toISOString()}] [${level}] ${message}`, details);
-  }
+function log(level, message, detail = "") {
+  const fn = level === "debug" ? console.log : console[level] || console.log;
+  fn(`[${new Date().toISOString()}] [shard ${client.shard?.ids?.join(",") ?? "local"}] [${level}] ${message}`, detail);
 }
 
-function onCooldown(interaction, command, duration) {
-  const now = Date.now();
-  if (cooldowns.size > 2000) {
-    for (const [key, expiry] of cooldowns) {
-      if (expiry <= now) cooldowns.delete(key);
+function getMode(message) {
+  if (roastChannelId && message.channelId === roastChannelId) return "roast";
+  if (message.channelId === chatChannelId) return "chat";
+  return null;
+}
+
+function splitMessage(text, maxChunks) {
+  const normalized = String(text).replace(/@everyone/gi, "@​everyone").replace(/@here/gi, "@​here");
+  const chunks = [];
+  let remaining = normalized;
+  while (remaining.length && chunks.length < maxChunks) {
+    if (remaining.length <= 1900) {
+      chunks.push(remaining);
+      break;
     }
+    let splitAt = remaining.lastIndexOf("\n", 1900);
+    if (splitAt < 1000) splitAt = remaining.lastIndexOf(" ", 1900);
+    if (splitAt < 1000) splitAt = 1900;
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).trimStart();
   }
-  const key = `${interaction.user.id}:${command}`;
-  const until = cooldowns.get(key) || 0;
-  if (until > now) return Math.ceil((until - now) / 1000);
-  cooldowns.set(key, now + duration);
+  if (remaining.length && chunks.length) {
+    const last = chunks.length - 1;
+    chunks[last] = chunks[last].slice(0, 1850) + "\n…";
+  }
+  return chunks;
+}
+
+function cooldownRemaining(message) {
+  const now = Date.now();
+  for (const [key, expiry] of cooldowns) if (expiry <= now) cooldowns.delete(key);
+  const key = `${message.channelId}:${message.author.id}`;
+  const expiry = cooldowns.get(key) || 0;
+  if (expiry > now) return Math.ceil((expiry - now) / 1000);
+  cooldowns.set(key, now + config.limits.perUserCooldownMs);
   return 0;
 }
 
-async function replyError(interaction, error) {
-  log("error", `Command failed: /${interaction.commandName}`, error?.message || String(error));
-  const content = config.security.hideApiErrors
-    ? "Something went wrong while processing that request. Please try again in a moment."
-    : `Request failed: ${String(error.message || error).slice(0, 300)}`;
+async function fetchConversation(message) {
+  const limit = Math.max(2, Math.min(100, config.conversation.historyLimit));
+  const fetched = await message.channel.messages.fetch({ limit });
+  const unique = new Map(fetched.map(item => [item.id, item]));
+  unique.set(message.id, message);
+
+  if (config.conversation.includeReplyContext && message.reference?.messageId) {
+    try {
+      const referenced = await message.channel.messages.fetch(message.reference.messageId);
+      unique.set(referenced.id, referenced);
+    } catch (error) {
+      log("debug", "Could not fetch referenced message", error.message);
+    }
+  }
+  return [...unique.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+}
+
+async function keepTyping(channel) {
+  if (!config.typing.enabled) return () => {};
+  let stopped = false;
+  const send = () => {
+    if (!stopped) channel.sendTyping().catch(error => log("debug", "Typing indicator failed", error.message));
+  };
+  send();
+  const timer = setInterval(send, Math.max(5000, config.typing.refreshIntervalMs));
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+async function handleMessage(message) {
+  if (!message.inGuild() || message.webhookId) return;
+  const mode = getMode(message);
+  if (!mode) return;
+  if (message.author.id === client.user.id) return;
+  if (config.channels.ignoreBots && message.author.bot) return;
+  if (message.system) return;
+  if (inFlight.has(message.id)) return;
+
+  const wait = cooldownRemaining(message);
+  if (wait) {
+    log("debug", `Ignoring message during per-user cooldown (${wait}s)`);
+    return;
+  }
+  if (activeRequests >= config.limits.maxConcurrentRequestsPerShard) {
+    log("warn", "AI request capacity reached; skipping message");
+    return;
+  }
+
+  inFlight.add(message.id);
+  activeRequests++;
+  let stopTyping = () => {};
   try {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content, allowedMentions: { parse: [] } });
+    stopTyping = await keepTyping(message.channel);
+    const history = await fetchConversation(message);
+    const messages = toModelMessages(history, config, message);
+    if (mode === "roast") {
+      const prompt = `Create a playful roast inspired by this Discord message. Keep it light and do not make claims about the author's real life.\n\nLatest message: ${message.content || "[no text]"}`;
+      messages.push({ role: "user", content: prompt });
+    }
+    const result = await generateReply(config, messages, mode);
+    const chunks = splitMessage(result.text, config.limits.maxReplyChunks);
+    if (!chunks.length) return;
+    const replyOptions = { allowedMentions: { parse: [] } };
+    if (config.conversation.replyToTriggerMessage) {
+      await message.reply({ ...replyOptions, content: chunks[0], failIfNotExists: false });
     } else {
-      await interaction.reply({ content, ephemeral: true, allowedMentions: { parse: [] } });
+      await message.channel.send({ ...replyOptions, content: chunks[0] });
     }
-  } catch (replyFailure) {
-    log("warn", "Could not send command error response", replyFailure.message);
-  }
-}
-
-function safeOutput(text) {
-  return String(text).replace(/@everyone/gi, "@​everyone").replace(/@here/gi, "@​here").slice(0, 1900);
-}
-
-client.once(Events.ClientReady, readyClient => {
-  readyClient.user.setActivity(config.bot.activity, { type: ActivityType.Listening });
-  log("info", `Logged in as ${readyClient.user.tag}`);
-});
-
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-  const command = interaction.commandName;
-  try {
-    if (command === "ping") {
-      if (!config.features.ping) return interaction.reply({ content: "This command is disabled.", ephemeral: true });
-      return interaction.reply({ content: `Pong! Gateway: ${Math.round(client.ws.ping)}ms`, ephemeral: true });
+    for (const chunk of chunks.slice(1)) {
+      await message.channel.send({ ...replyOptions, content: chunk });
     }
-
-    if (command === "health") {
-      if (!config.features.health) return interaction.reply({ content: "This command is disabled.", ephemeral: true });
-      const configured = Boolean(process.env.AI_API_KEY);
-      return interaction.reply({
-        content: `Bot: online\nAI key: ${configured ? "configured" : "missing"}\nAI sessions: ${sessionCount()}`,
-        ephemeral: true
-      });
-    }
-
-    if (command === "clear-chat") {
-      clearHistory(interaction);
-      return interaction.reply({ content: "Your AI conversation context has been cleared.", ephemeral: true });
-    }
-
-    if (command === "chat") {
-      if (!config.features.chat) return interaction.reply({ content: "AI chat is disabled.", ephemeral: true });
-      const wait = onCooldown(interaction, command, config.chat.cooldownMs);
-      if (wait) return interaction.reply({ content: `Slow down a little! Try again in ${wait}s.`, ephemeral: true });
-      const message = interaction.options.getString("message", true);
-      if (message.length > config.ai.maxInputCharacters) {
-        return interaction.reply({ content: `Your message must be ${config.ai.maxInputCharacters} characters or fewer.`, ephemeral: true });
-      }
-      await interaction.deferReply();
-      const answer = await chat(aiClient, config, interaction, message);
-      return interaction.editReply({ content: safeOutput(answer), allowedMentions: { parse: [] } });
-    }
-
-    if (command === "roast") {
-      if (!config.features.roast) return interaction.reply({ content: "AI roasts are disabled.", ephemeral: true });
-      const wait = onCooldown(interaction, command, config.roast.cooldownMs);
-      if (wait) return interaction.reply({ content: `The roast oven is cooling down. Try again in ${wait}s.`, ephemeral: true });
-      const target = interaction.options.getUser("target") || interaction.user;
-      const intensity = interaction.options.getInteger("intensity") || config.roast.defaultIntensity;
-      await interaction.deferReply();
-      const answer = await roast(aiClient, config, target.username, intensity);
-      return interaction.editReply({
-        content: `🔥 **Roast for ${target.username}**\n${safeOutput(answer)}`,
-        allowedMentions: { parse: [] }
-      });
-    }
+    log("info", `Replied in ${mode} channel using ${result.provider}/${result.model}`);
   } catch (error) {
-    await replyError(interaction, error);
+    log("error", "Automatic AI reply failed", error?.message || String(error));
+    try {
+      await message.reply({
+        content: "I couldn't generate a reply just now. Please try again in a moment.",
+        allowedMentions: { parse: [] },
+        failIfNotExists: false
+      });
+    } catch (replyError) {
+      log("warn", "Could not send failure notice", replyError.message);
+    }
+  } finally {
+    stopTyping();
+    activeRequests = Math.max(0, activeRequests - 1);
+    inFlight.delete(message.id);
   }
+}
+
+client.once(Events.ClientReady, ready => {
+  ready.user.setActivity(config.bot.activity, { type: ActivityType.Listening });
+  log("info", `Ready as ${ready.user.tag}; automatic chat channel=${chatChannelId}; roast channel=${roastChannelId || "disabled"}`);
 });
 
+client.on(Events.MessageCreate, message => {
+  handleMessage(message).catch(error => log("error", "Unhandled message handler error", error.message));
+});
 client.on(Events.Error, error => log("error", "Discord client error", error.message));
 process.on("unhandledRejection", error => log("error", "Unhandled promise rejection", error?.message || String(error)));
 
 async function shutdown(signal) {
-  log("info", `Received ${signal}; shutting down`);
+  log("info", `Received ${signal}; shutting down gracefully`);
   client.destroy();
   process.exit(0);
 }
-
 process.once("SIGINT", () => shutdown("SIGINT"));
 process.once("SIGTERM", () => shutdown("SIGTERM"));
 
-try {
-  aiClient = createAIClient(config);
-} catch (error) {
-  log("warn", "AI provider is not ready; chat and roast will fail until configured", error.message);
-  aiClient = null;
-}
-
-client.login(process.env.DISCORD_TOKEN).catch(error => {
+client.login(token).catch(error => {
   log("error", "Discord login failed", error.message);
   process.exitCode = 1;
 });
