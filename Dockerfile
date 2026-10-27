@@ -11,4 +11,4 @@ COPY --chown=node:node config.json ./config.json
 COPY --chown=node:node src ./src
 
 USER node
-CMD ["node", "src/index.js"]
+CMD ["node", "src/manager.js"]
