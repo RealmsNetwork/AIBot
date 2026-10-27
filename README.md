@@ -12,11 +12,12 @@ An open-source Discord bot with AI chat, playful AI roasts, slash commands, conf
 - OpenAI-compatible API endpoint configuration.
 - Configurable prompts, cooldowns, model, response limits, and feature toggles.
 - Dependency integrity checker and automated CI checks.
+- Dockerfile and hardened Docker Compose deployment.
 - No privileged Discord gateway intents required for the included commands.
 
 ## Requirements
 
-- Node.js 20.18 or newer.
+- Node.js 20.18 or newer, or Docker.
 - A Discord application and bot token.
 - An API key for an OpenAI-compatible AI provider.
 
@@ -44,6 +45,17 @@ An open-source Discord bot with AI chat, playful AI roasts, slash commands, conf
    ```
 
 For development, run `npm run dev`.
+
+## Docker deployment
+
+Create `.env` using `.env.example`, then register commands once from a local Node.js install with `npm run deploy:commands`. Build and start the container:
+
+```bash
+docker compose up -d --build
+docker compose logs -f aibot
+```
+
+The Compose service uses a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, and restarts unless stopped. Keep `.env` private.
 
 ## Dependency checker and tests
 
