@@ -57,3 +57,9 @@ test("rejects timestamped transcript output instead of posting it as a reply", (
 test("keeps a normal Discord reply intact", () => {
   assert.equal(sanitizeReply("**hey** <@123456789012345678>"), "**hey** <@123456789012345678>");
 });
+
+test("removes filler ellipses at the end of replies", () => {
+  assert.equal(sanitizeReply("that is so cooked…"), "that is so cooked");
+  assert.equal(sanitizeReply("lowkey wild..."), "lowkey wild");
+  assert.equal(sanitizeReply("wait... what?"), "wait... what?");
+});
