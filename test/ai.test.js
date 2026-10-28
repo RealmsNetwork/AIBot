@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { toModelMessages, getProviderConfig } = require("../src/ai");
+const { toModelMessages, getProviderConfig, sanitizeReply } = require("../src/ai");
 
 const config = {
   ai: { provider: "openai", model: "gpt-4o-mini" },
@@ -30,8 +30,10 @@ test("maps human messages to user turns and bot replies to assistant turns", () 
   const current = mockMessage({ id: "3", timestamp: 3000, authorId: "human-id", username: "Human", content: "how are you" });
   const result = toModelMessages([current, bot, human], { conversation: config.conversation }, current);
   assert.deepEqual(result.map(item => item.role), ["user", "assistant", "user"]);
-  assert.match(result[0].content, /1970-01-01T00:00:01.000Z/);
-  assert.match(result[1].content, /AIBot: hello/);
+  assert.match(result[0].content, /@Human .* said: hi/);
+  assert.match(result[1].content, /@AIBot .* said: hello/);
+  assert.doesNotMatch(result[0].content, /1970-01-01T00:00:01.000Z/);
+  assert.deepEqual(result.map(item => item.role), ["user", "assistant", "user"]);
 });
 
 test("selects the configured provider and its model", () => {
@@ -45,4 +47,13 @@ test("uses provider-specific Ollama defaults instead of the OpenAI model", () =>
   assert.equal(result.name, "ollama");
   assert.equal(result.model, "llama3.2");
   assert.equal(result.baseURL, "http://127.0.0.1:11434/v1");
+});
+
+test("rejects timestamped transcript output instead of posting it as a reply", () => {
+  const output = "[2026-10-28T21:05:39.119Z] @RealmsNetwork AI: hey\n[2026-10-28T21:06:01.124Z] @Human: hello";
+  assert.equal(sanitizeReply(output), "");
+});
+
+test("keeps a normal Discord reply intact", () => {
+  assert.equal(sanitizeReply("**hey** <@123456789012345678>"), "**hey** <@123456789012345678>");
 });
