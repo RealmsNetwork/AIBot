@@ -113,7 +113,7 @@ function sanitizeReply(value) {
   const matches = lines.filter(line => transcriptLine.test(line));
   // Never post a model-generated timestamped Discord/log transcript as if it were a reply.
   if (matches.length >= 2 && matches.length >= lines.filter(line => line.trim()).length / 2) return "";
-  return text.replace(/^\s*\[\d{4}-\d{2}-\d{2}T[^\]]+Z\]\s*(?:\[[^\]]+\]\s*)?(?:@?RealmsNetwork AI|AI)\s*:\s*/i, "").trim().replace(/(?:\s*(?:\.{3,}|…)+\s*)+$/u, "").trim();
+  return text.replace(/^\s*\[\d{4}-\d{2}-\d{2}T[^\]]+Z\]\s*(?:\[[^\]]+\]\s*)?(?:@?RealmsNetwork AI|AI)\s*:\s*/i, "").replace(/\r?\n?\s*\[reply shortened to fit Discord\]\s*$/i, "").trim().replace(/(?:\s*(?:\.{3,}|…)+\s*)+$/u, "").trim();
 }
 
 function toModelMessages(discordMessages, config, currentMessage) {
