@@ -6,8 +6,9 @@ Open-source, automatic channel-based Discord AI. No slash commands and no databa
 
 - **Automatic chat channel:** eligible new messages in the configured channel trigger AI replies.
 - **Automatic roast channel:** optionally configure a separate channel whose messages receive playful roast-style replies.
+- **Mention and reply triggers:** @mentions and replies to the bot work outside the dedicated channels (same guild), using chat mode by default.
+- **Server and channel awareness:** builds a public channel map (names, types, categories, topics) and can sample recent messages from other public channels for situational context.
 - **Discord-native history:** fetches recent messages from the channel each time; human messages become model user turns and the bot own replies become assistant turns.
-- **Dates and times:** includes ISO 8601 UTC timestamps, author names, reply references, and attachment names in context.
 - **Typing indicator:** shows and refreshes Discord typing while the model is working.
 - **Sharding:** starts Discord.js ShardingManager with automatic shard count by default and worker respawning.
 - **Provider adapters:** direct OpenAI, Google Gemini, xAI Grok, Anthropic, and OpenAI-compatible endpoints such as Ollama, OpenRouter, Groq, DeepSeek, and custom providers.
@@ -79,6 +80,8 @@ This supports many model families, not literally every model on the internet. A 
 - The bot can only read messages it has permission to view. Attachments are represented by names and metadata, not full contents.
 - Other bots are ignored by default, and the bot never responds to its own messages.
 - A separate roast channel uses the roast prompt automatically.
+- Mentions and replies to the bot can trigger chat-mode replies outside the dedicated channels when enabled in `config.triggers`.
+- Optional `config.context` settings inject a public guild channel map and sampled messages from other readable public channels (staff/private name patterns are filtered).
 - Typing indicators refresh during long requests. Replies are split into Discord-safe chunks.
 - Cooldowns and concurrency limits are per shard and held in memory.
 

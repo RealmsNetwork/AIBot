@@ -115,5 +115,50 @@
   "sharding": {
     "mode": "auto",
     "respawn": true
+  },
+  "triggers": {
+    "respondToMentions": true,
+    "respondToReplies": true,
+    "mentionUsesChatMode": true,
+    "allowOutsideConfiguredChannels": true,
+    "requireGuild": true
+  },
+  "context": {
+    "includeGuildMap": true,
+    "includeCurrentChannelMeta": true,
+    "includeChannelTopics": true,
+    "maxGuildChannelsListed": 60,
+    "sampleOtherChannels": true,
+    "sampleMessagesPerChannel": 4,
+    "maxSampleChannels": 4,
+    "guildMapCacheTtlMs": 300000,
+    "preferPublicChannels": true,
+    "excludeChannelNamePatterns": [
+      "staff",
+      "admin",
+      "mod",
+      "ticket",
+      "log",
+      "audit",
+      "nsfw",
+      "private",
+      "owner",
+      "management",
+      "strike",
+      "attendance"
+    ],
+    "priorityChannelNameHints": [
+      "announcement",
+      "rules",
+      "status",
+      "changelog",
+      "server-guide",
+      "known-issue",
+      "help",
+      "minecraft",
+      "chat",
+      "welcome",
+      "ip"
+    ]
   }
 }
