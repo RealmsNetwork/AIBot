@@ -40,7 +40,12 @@ function shutdown(signal) {
   shuttingDown = true;
   console.log(`[manager] Received ${signal}; stopping all shards`);
   for (const shard of manager.shards.values()) {
-    shard.kill().catch(error => console.warn(`[manager] Could not stop shard ${shard.id}:`, error.message));
+    try {
+      // Shard.kill() is synchronous and does not return a Promise in discord.js v14.
+      shard.kill();
+    } catch (error) {
+      console.warn(`[manager] Could not stop shard ${shard.id}:`, error.message);
+    }
   }
   setTimeout(() => process.exit(0), 1500).unref();
 }
