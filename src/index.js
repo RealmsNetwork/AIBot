@@ -58,7 +58,7 @@ function splitMessage(text, maxChunks) {
   }
   if (remaining.length && chunks.length) {
     const last = chunks.length - 1;
-    chunks[last] = chunks[last].slice(0, 1850).trimEnd() + "\n[reply shortened to fit Discord]";
+    chunks[last] = chunks[last].slice(0, 1850).trimEnd();
   }
   return chunks;
 }
