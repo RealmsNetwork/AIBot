@@ -58,6 +58,11 @@ test("keeps a normal Discord reply intact", () => {
   assert.equal(sanitizeReply("**hey** <@123456789012345678>"), "**hey** <@123456789012345678>");
 });
 
+test("removes a model-generated false shortening notice", () => {
+  assert.equal(sanitizeReply("short reply\n[reply shortened to fit Discord]"), "short reply");
+  assert.equal(sanitizeReply("another short reply\n[REPLY SHORTENED TO FIT DISCORD]"), "another short reply");
+});
+
 test("removes filler ellipses at the end of replies", () => {
   assert.equal(sanitizeReply("that is so cooked…"), "that is so cooked");
   assert.equal(sanitizeReply("lowkey wild..."), "lowkey wild");
