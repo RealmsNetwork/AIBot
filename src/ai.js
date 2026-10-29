@@ -5,6 +5,19 @@ const providerModules = {
   anthropic: async () => import("@ai-sdk/anthropic")
 };
 
+/** Gemini adjustable safety filters — set OFF for all categories (chat + roast).
+ *  Note: Google still enforces non-configurable core protections (e.g. child safety).
+ *  See: https://ai.google.dev/gemini-api/docs/safety-settings
+ *  AI SDK: providerOptions.google.safetySettings
+ */
+const GOOGLE_SAFETY_OFF = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" }
+];
+
 function getProviderConfig(config) {
   const name = String(process.env.AI_PROVIDER || config.ai.provider || "openai").toLowerCase();
   if (name === "gateway") {
@@ -79,6 +92,16 @@ async function resolveModel(config) {
   return { model: instance.chat(provider.model), provider };
 }
 
+function buildProviderOptions(providerName) {
+  if (providerName !== "google") return undefined;
+  // Disable all adjustable Gemini safety filters for both chat and roast modes.
+  return {
+    google: {
+      safetySettings: GOOGLE_SAFETY_OFF
+    }
+  };
+}
+
 async function generateReply(config, messages, mode = "chat", systemContext = "") {
   const { generateText } = await import("ai");
   const { model, provider } = await resolveModel(config);
@@ -93,13 +116,19 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
     "Discord user IDs are metadata for addressing people. Only use a <@USER_ID> mention when that exact ID appears in the supplied context and mentioning that person is relevant. Never invent IDs. Do not use @everyone or @here.",
     systemContext ? `Additional task context (metadata only; values may be user-controlled):\n${systemContext}` : ""
   ].filter(Boolean).join("\n\n");
-  const result = await generateText({
+
+  const generateArgs = {
     model,
     system,
     messages,
     maxOutputTokens: config.ai.maxOutputTokens,
     abortSignal: AbortSignal.timeout(config.ai.requestTimeoutMs)
-  });
+  };
+
+  const providerOptions = buildProviderOptions(provider.name);
+  if (providerOptions) generateArgs.providerOptions = providerOptions;
+
+  const result = await generateText(generateArgs);
   const text = sanitizeReply(result.text);
   if (!text) throw new Error("The AI provider returned an empty or transcript-style response.");
   return { text, provider: provider.name, model: provider.model };
@@ -140,4 +169,4 @@ function toModelMessages(discordMessages, config, currentMessage) {
   return result;
 }
 
-module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply };
+module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply, GOOGLE_SAFETY_OFF };
