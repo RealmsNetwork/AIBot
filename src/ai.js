@@ -5,19 +5,11 @@ const providerModules = {
   anthropic: async () => import("@ai-sdk/anthropic")
 };
 
-/** Gemini adjustable safety filters — set OFF for all categories (chat + roast).
- *  Note: Google still enforces non-configurable core protections (e.g. child safety).
+/** Optional Gemini safetySettings via config.ai.googleSafetySettings.
+ *  Public defaults leave this unset so Google uses model defaults.
+ *  Production can override in config.json (not meant as a public "filters off" preset).
  *  See: https://ai.google.dev/gemini-api/docs/safety-settings
- *  AI SDK: providerOptions.google.safetySettings
  */
-const GOOGLE_SAFETY_SETTINGS = [
-  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
-  // Keep sexually explicit filtering on (block medium+ probability)
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
-  { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" }
-];
 
 function getProviderConfig(config) {
   const name = String(process.env.AI_PROVIDER || config.ai.provider || "openai").toLowerCase();
@@ -93,12 +85,13 @@ async function resolveModel(config) {
   return { model: instance.chat(provider.model), provider };
 }
 
-function buildProviderOptions(providerName) {
+function buildProviderOptions(providerName, config) {
   if (providerName !== "google") return undefined;
-  // Disable all adjustable Gemini safety filters for both chat and roast modes.
+  const settings = config?.ai?.googleSafetySettings;
+  if (!Array.isArray(settings) || !settings.length) return undefined;
   return {
     google: {
-      safetySettings: GOOGLE_SAFETY_SETTINGS
+      safetySettings: settings
     }
   };
 }
@@ -126,7 +119,7 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
     abortSignal: AbortSignal.timeout(config.ai.requestTimeoutMs)
   };
 
-  const providerOptions = buildProviderOptions(provider.name);
+  const providerOptions = buildProviderOptions(provider.name, config);
   if (providerOptions) generateArgs.providerOptions = providerOptions;
 
   const result = await generateText(generateArgs);
@@ -170,4 +163,4 @@ function toModelMessages(discordMessages, config, currentMessage) {
   return result;
 }
 
-module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply, GOOGLE_SAFETY_SETTINGS };
+module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply };
