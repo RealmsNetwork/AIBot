@@ -10,10 +10,11 @@ const providerModules = {
  *  See: https://ai.google.dev/gemini-api/docs/safety-settings
  *  AI SDK: providerOptions.google.safetySettings
  */
-const GOOGLE_SAFETY_OFF = [
+const GOOGLE_SAFETY_SETTINGS = [
   { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
   { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+  // Keep sexually explicit filtering on (block medium+ probability)
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
   { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
   { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" }
 ];
@@ -97,7 +98,7 @@ function buildProviderOptions(providerName) {
   // Disable all adjustable Gemini safety filters for both chat and roast modes.
   return {
     google: {
-      safetySettings: GOOGLE_SAFETY_OFF
+      safetySettings: GOOGLE_SAFETY_SETTINGS
     }
   };
 }
@@ -169,4 +170,4 @@ function toModelMessages(discordMessages, config, currentMessage) {
   return result;
 }
 
-module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply, GOOGLE_SAFETY_OFF };
+module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply, GOOGLE_SAFETY_SETTINGS };
