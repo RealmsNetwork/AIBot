@@ -96,6 +96,31 @@ function buildProviderOptions(providerName, config) {
   };
 }
 
+
+class SafetyBlockedError extends Error {
+  constructor(message = "Content blocked by model safety filters") {
+    super(message);
+    this.name = "SafetyBlockedError";
+    this.code = "SAFETY_BLOCKED";
+  }
+}
+
+function isSafetyBlockError(error) {
+  if (!error) return false;
+  if (error instanceof SafetyBlockedError || error.code === "SAFETY_BLOCKED") return true;
+  const parts = [
+    error.message,
+    error.cause?.message,
+    error.data && JSON.stringify(error.data),
+    error.responseBody,
+    error.url,
+    error.value && JSON.stringify(error.value),
+    error.finishReason,
+    error.cause && JSON.stringify(error.cause)
+  ].filter(Boolean).join(" ").toLowerCase();
+  return /(safety|blocked|prohibited[_ ]?content|harm_category|finishreason["'=: ]*safety|request was blocked|content filter|responsibleai|rai)/i.test(parts);
+}
+
 async function generateReply(config, messages, mode = "chat", systemContext = "") {
   const { generateText } = await import("ai");
   const { model, provider } = await resolveModel(config);
@@ -122,9 +147,31 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
   const providerOptions = buildProviderOptions(provider.name, config);
   if (providerOptions) generateArgs.providerOptions = providerOptions;
 
-  const result = await generateText(generateArgs);
+  let result;
+  try {
+    result = await generateText(generateArgs);
+  } catch (error) {
+    if (isSafetyBlockError(error)) {
+      throw new SafetyBlockedError(error?.message || "Content blocked by model safety filters");
+    }
+    throw error;
+  }
+
+  const finish = String(result.finishReason || result.rawFinishReason || "").toLowerCase();
+  if (finish === "content-filter" || finish === "safety") {
+    throw new SafetyBlockedError(`Blocked by safety filters (finishReason=${finish})`);
+  }
+
+  // Google sometimes returns empty candidates when blocked
   const text = sanitizeReply(result.text);
-  if (!text) throw new Error("The AI provider returned an empty or transcript-style response.");
+  if (!text) {
+    const meta = result.providerMetadata || result.response || {};
+    const metaStr = JSON.stringify(meta).toLowerCase();
+    if (/safety|blocked|prohibited|harm_category/.test(metaStr)) {
+      throw new SafetyBlockedError("Content blocked by model safety filters");
+    }
+    throw new Error("The AI provider returned an empty or transcript-style response.");
+  }
   return { text, provider: provider.name, model: provider.model };
 }
 
@@ -163,4 +210,4 @@ function toModelMessages(discordMessages, config, currentMessage) {
   return result;
 }
 
-module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply };
+module.exports = { generateReply, toModelMessages, getProviderConfig, sanitizeReply, SafetyBlockedError, isSafetyBlockError };

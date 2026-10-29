@@ -10,7 +10,7 @@ const {
   ChannelType,
   PermissionFlagsBits
 } = require("discord.js");
-const { generateReply, toModelMessages } = require("./ai");
+const { generateReply, toModelMessages, SafetyBlockedError, isSafetyBlockError } = require("./ai");
 
 const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"));
 const chatChannelId = process.env.CHAT_CHANNEL_ID || config.channels.chatChannelId;
@@ -393,10 +393,18 @@ async function handleMessage(message) {
     }
     log("info", `Replied in ${mode} mode using ${result.provider}/${result.model}`);
   } catch (error) {
-    log("error", "Automatic AI reply failed", error?.message || String(error));
+    const safetyBlocked = isSafetyBlockError(error) || error instanceof SafetyBlockedError;
+    if (safetyBlocked) {
+      log("info", "AI reply blocked by safety filters", error?.message || String(error));
+    } else {
+      log("error", "Automatic AI reply failed", error?.message || String(error));
+    }
     try {
+      const notice = safetyBlocked
+        ? "❌ This server has that blocked. Please try a different prompt — or rephrase whatever you were going to say."
+        : "I couldn't generate a reply just now. Please try again in a moment.";
       await message.reply({
-        content: "I couldn't generate a reply just now. Please try again in a moment.",
+        content: notice,
         allowedMentions: { parse: [] },
         failIfNotExists: false
       });
