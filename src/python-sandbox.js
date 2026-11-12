@@ -43,6 +43,7 @@ function validateHttpsUrl(value) {
   if (parsed.username || parsed.password) throw new Error("URLs containing credentials are blocked.");
   if (parsed.port && parsed.port !== "443") throw new Error("Only the standard HTTPS port is allowed.");
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  parsed.hostname = hostname;
   if (!hostname || isIP(hostname) || hostname === "localhost" ||
       hostname.endsWith(".localhost") || hostname.endsWith(".local") ||
       hostname.endsWith(".internal") || hostname.endsWith(".onion")) {
