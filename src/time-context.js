@@ -90,12 +90,12 @@ function zonedWallTimeToUtc(wallTime, timeZone) {
 function parseDateInput(value, timeZone = "UTC") {
   let input = String(value || "").trim().replace(/^(?:on|at)\s+/i, "").replace(/[?.!]+$/, "").trim();
   if (!input) return null;
-  const zoneMatch = input.match(/\s+([A-Za-z_]+\/[A-Za-z_]+)$/);
+  const zoneMatch = input.match(/\s+([A-Za-z_+-]+(?:\/[A-Za-z_+-]+)+)$/);
   if (zoneMatch) {
     timeZone = zoneMatch[1];
     input = input.slice(0, zoneMatch.index).trim();
   }
-  const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?\d{10}|\d{13})$/i);
+  const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?-?\d{9,13})$/i);
   if (epoch) {
     const number = Number(epoch[1]);
     return validDate(Math.abs(number) >= 100000000000 ? number : number * 1000);
@@ -147,7 +147,7 @@ function parseTimeRequest(value, options = {}) {
     || input.match(/^(?:convert|turn)\s+(.+?)\s+(?:to|into)\s+(?:a\s+)?(?:unix\s+)?(?:timestamp|epoch|discord\s+timestamp)$/i)
     || input.match(/^(.+?)\s+(?:as|to)\s+(?:a\s+)?(?:unix\s+)?(?:timestamp|epoch|discord\s+timestamp)$/i);
   if (dateCommand) {
-    const requestedZone = dateCommand[1].match(/\s+([A-Za-z_]+\/[A-Za-z_]+)$/);
+    const requestedZone = dateCommand[1].match(/\s+([A-Za-z_+-]+(?:\/[A-Za-z_+-]+)+)$/);
     const displayZone = requestedZone ? requestedZone[1] : timeZone;
     const date = parseDateInput(dateCommand[1], displayZone);
     if (!date) return "I couldn't parse that date/time. Include a clear date, time, and timezone, or use an ISO timestamp.";
