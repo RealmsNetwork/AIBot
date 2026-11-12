@@ -88,8 +88,13 @@ function zonedWallTimeToUtc(wallTime, timeZone) {
 }
 
 function parseDateInput(value, timeZone = "UTC") {
-  const input = String(value || "").trim().replace(/^(?:on|at)\s+/i, "").replace(/[?.!]+$/, "").trim();
+  let input = String(value || "").trim().replace(/^(?:on|at)\s+/i, "").replace(/[?.!]+$/, "").trim();
   if (!input) return null;
+  const zoneMatch = input.match(/\s+([A-Za-z_]+\/[A-Za-z_]+)$/);
+  if (zoneMatch) {
+    timeZone = zoneMatch[1];
+    input = input.slice(0, zoneMatch.index).trim();
+  }
   const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?\d{10}|\d{13})$/i);
   if (epoch) {
     const number = Number(epoch[1]);
@@ -144,6 +149,8 @@ function parseTimeRequest(value, options = {}) {
   }
 
   const relative = input.match(/^(?:(?:what\s+(?:date|time)\s+(?:will\s+it\s+be\s+)?|when\s+is\s+)?(?:in\s+)?)(.+?)\s+(ago|from now|from today)$/i)
+    || input.match(/^what\s+(?:date|time)\s+will\s+it\s+be\s+in\s+(.+)$/i)
+    || input.match(/^what\s+(?:date|time)\s+is\s+it\s+in\s+(.+)$/i)
     || input.match(/^(?:what\s+(?:date|time)\s+(?:is\s+)?(?:in|after)\s+)(.+)$/i)
     || input.match(/^in\s+(.+)$/i);
   if (relative) {
