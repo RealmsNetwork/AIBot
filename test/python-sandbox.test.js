@@ -53,5 +53,12 @@ test("keeps legacy Web Risk configuration working during migration", () => {
     getConfiguredReputationProviders({ requireWebRisk: true }),
     ["google-webrisk"]
   );
-  assert.deepEqual(getConfiguredReputationProviders({ providers: [] }), []);
+  assert.throws(
+    () => getConfiguredReputationProviders({ providers: [] }),
+    /at least one URL reputation provider/
+  );
+  assert.throws(
+    () => getConfiguredReputationProviders({}),
+    /at least one URL reputation provider/
+  );
 });
