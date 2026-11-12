@@ -95,7 +95,28 @@ The AI can use a Python 3 interpreter for calculations, time/date work, and boun
 
 Network access is not a raw socket or unrestricted internet connection. Python code must use the `realmsnet.http_get(url)` helper, which permits HTTPS GET only, resolves and pins a public IPv4 destination, rejects private/local destinations and redirects, limits response size and request count, caches reputation verdicts, and applies a URL reputation check. Network access is fail-closed unless the reputation service is configured.
 
-Set `GOOGLE_WEBRISK_API_KEY` in `.env` to enable URL reputation checks. Create a Google Cloud project, enable the Web Risk API, enable billing, and create an API key restricted to the Web Risk API. The Lookup API checks each URL against Google's malware, social-engineering/phishing, and unwanted-software lists. Google currently documents a quota of 6,000 `SearchUris` requests per minute per Cloud project and 100,000 free Lookup API calls per month; additional calls are currently $0.50 per 1,000. These quotas are shared by every app using that Cloud project and can be adjusted in Google Cloud where eligible. The bot caches verdicts to avoid repeat lookups. To reduce disclosure of secrets, it sends the URL origin and path to Google but strips query strings and fragments. Google therefore sees the checked host and path, but not signed query parameters. If the API key is missing or the provider returns an error, sandbox network access fails closed.
+URL reputation providers are configured under `python.network.providers` in `config.json`. The default is `["google-webrisk"]`; add one or more of the supported provider IDs to enable additional checks. All enabled providers are queried concurrently to reduce latency. A positive result from any provider blocks the destination, and an error, quota response, missing credential, or malformed verdict from any enabled provider fails closed.
+
+| Provider ID | Credential | Coverage and notes |
+|---|---|---|
+| `google-webrisk` | `GOOGLE_WEBRISK_API_KEY` | Google's malware, social-engineering/phishing, and unwanted-software lists. Create a Google Cloud project, enable Web Risk and billing, then restrict the API key to Web Risk. Google currently documents 6,000 `SearchUris` requests/minute per Cloud project and 100,000 free Lookup calls/month; additional calls are currently $0.50 per 1,000. |
+| `urlhaus` | `URLHAUS_AUTH_KEY` | abuse.ch URLhaus lookup for URLs known to distribute malware. Obtain an Auth-Key through the abuse.ch Authentication Portal. The community API is fair-use; commercial or for-profit usage may require its enhanced commercial API. |
+| `virustotal` | `VIRUSTOTAL_API_KEY` | Optional multi-engine URL analysis. The public API is limited to 4 requests/minute and is not licensed for commercial products or services, so use a suitable paid/private plan if your deployment requires commercial use. By default, only confirmed malicious engine detections block; set `python.network.virusTotalBlockSuspicious` to `true` to also block suspicious verdicts. |
+
+Example configuration:
+
+```json
+"network": {
+  "enabled": true,
+  "providers": ["google-webrisk", "urlhaus"],
+  "maxRequestsPerRun": 3,
+  "maxResponseBytes": 12000,
+  "timeoutMs": 8000,
+  "virusTotalBlockSuspicious": false
+}
+```
+
+Set the matching credentials in `.env`. Only configure providers whose credentials and usage terms you have reviewed. Provider quotas are separate and may change; a provider's public/free tier may not be appropriate for a commercial deployment. The bot caches safe verdicts for five minutes and flagged verdicts for one hour (subject to a shorter provider expiry). To reduce disclosure of secrets, it sends the URL origin and path but strips query strings and fragments. Each provider therefore sees the checked host and path, but not signed query parameters.
 
 This is defense in depth, not a guarantee that arbitrary code is harmless. Keep the container resource limits enabled, update dependencies, and do not expose secrets to the Python worker.
 
