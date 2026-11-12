@@ -79,3 +79,10 @@ test("strips unrequested AI-generated Discord timestamps", () => {
   assert.equal(stripUnrequestedDiscordTimestamps("locked in at <t:1762950068:f> fr", "good work"), "locked in at  fr");
   assert.equal(stripUnrequestedDiscordTimestamps("convert this <t:1762950068:f>", "convert <t:1762950068:f>"), "convert this <t:1762950068:f>");
 });
+
+test("converts relative calendar dates with local clock times", () => {
+  const tomorrow = parseTimeRequest("unix timestamp for tomorrow at 7:21 AM", { now: NOW, timeZone: "UTC" });
+  assert.match(tomorrow, /Friday, November 13, 2026 at 7:21:00 AM UTC/);
+  const weekday = parseTimeRequest("unix timestamp for next Monday at 5:00 PM", { now: NOW, timeZone: "UTC" });
+  assert.match(weekday, /Monday, November 16, 2026 at 5:00:00 PM UTC/);
+});
