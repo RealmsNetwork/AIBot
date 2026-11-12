@@ -62,7 +62,9 @@ async function waitForVirusTotalSlot() {
   await previous;
   try {
     const waitMs = Math.max(0, nextVirusTotalRequestAt - Date.now());
-    if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+    if (waitMs) {
+      throw new Error("VirusTotal public API cooldown active; retry in " + Math.ceil(waitMs / 1000) + " seconds.");
+    }
     nextVirusTotalRequestAt = Date.now() + 15_000;
   } finally {
     release();
