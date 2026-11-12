@@ -127,10 +127,10 @@
     "includeGuildMap": true,
     "includeCurrentChannelMeta": true,
     "includeChannelTopics": true,
-    "maxGuildChannelsListed": 60,
+    "maxGuildChannelsListed": 120,
     "sampleOtherChannels": true,
     "sampleMessagesPerChannel": 4,
-    "maxSampleChannels": 4,
+    "maxSampleChannels": 20,
     "guildMapCacheTtlMs": 300000,
     "preferPublicChannels": true,
     "excludeChannelNamePatterns": [
@@ -159,6 +159,24 @@
       "chat",
       "welcome",
       "ip"
-    ]
+    ],
+    "includeVoiceChannelChats": true,
+    "timeZone": "UTC"
+  },
+  "python": {
+    "enabled": true,
+    "enabledInRoast": false,
+    "maxExecutionMs": 8000,
+    "maxCodeChars": 12000,
+    "maxOutputChars": 6000,
+    "maxConcurrentRuns": 1,
+    "maxToolSteps": 3,
+    "network": {
+      "enabled": true,
+      "requireVirusTotal": true,
+      "maxRequestsPerRun": 3,
+      "maxResponseBytes": 12000,
+      "timeoutMs": 8000
+    }
   }
 }
