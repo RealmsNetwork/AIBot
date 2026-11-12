@@ -89,6 +89,20 @@ This supports many model families, not literally every model on the internet. A 
 
 See `config.json` for provider models, system prompts, channel IDs, history length, timestamps, typing, roast behavior, and request limits. Environment variables override the main provider and channel settings. Never commit `.env` or API keys.
 
+## Python interpreter and execution safety
+
+The AI can use a Python 3 interpreter for calculations, time/date work, and bounded data processing. It runs in a fresh Pyodide/WebAssembly worker for each execution, not inside the Discord bot's main JavaScript thread. The worker is terminated after the configured time limit; output, source length, concurrent runs, and worker memory are bounded. Pyodide does not provide shell commands, host filesystem access, subprocess execution, or native mining binaries.
+
+Network access is not a raw socket or unrestricted internet connection. Python code must use the `realmsnet.http_get(url)` helper, which permits HTTPS GET only, resolves and pins a public IPv4 destination, rejects private/local destinations and redirects, limits response size and request count, and applies a domain reputation check. Network access is fail-closed unless the reputation service is configured.
+
+Set `VIRUSTOTAL_API_KEY` in `.env` to enable the optional VirusTotal domain reputation lookup. The implementation checks the hostname only, not the full URL path or query string, to avoid submitting signed links or other potentially sensitive URL data. VirusTotal states that queried indicators are added to its dataset and that its public API is limited to 4 requests per minute / 500 per day; its public API also must not be integrated into commercial products or services. Review the current [VirusTotal API terms](https://docs.virustotal.com/docs/api-overview) before enabling it. If those terms do not fit your deployment, keep sandbox networking disabled until a suitable reputation provider is configured.
+
+This is defense in depth, not a guarantee that arbitrary code is harmless. Keep the container resource limits enabled, update dependencies, and do not expose secrets to the Python worker.
+
+## Discord context coverage
+
+The bot can build context from public channels it is permitted to view, including text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs the appropriate view/history permissions and, for voice-channel text chat, the required channel access. Private/staff-name exclusions remain configurable.
+
 ## Dependency checks and tests
 
 ```bash
