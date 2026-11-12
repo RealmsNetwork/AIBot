@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isPublicIPv4, validateHttpsUrl, runPython } = require("../src/python-sandbox");
+const { isPublicIPv4, validateHttpsUrl, runPython, getConfiguredReputationProviders } = require("../src/python-sandbox");
 
 test("allows ordinary public IPv4 addresses", () => {
   assert.equal(isPublicIPv4("1.1.1.1"), true);
@@ -35,4 +35,23 @@ test("refuses Python execution when disabled", () => {
 test("rejects empty and oversized Python input before starting a worker", () => {
   assert.throws(() => runPython("  ", { enabled: true }), /empty/);
   assert.throws(() => runPython("x".repeat(501), { enabled: true, maxCodeChars: 500 }), /character limit/);
+});
+
+test("selects only supported URL reputation providers and removes duplicates", () => {
+  assert.deepEqual(
+    getConfiguredReputationProviders({ providers: ["google-webrisk", "urlhaus", "urlhaus"] }),
+    ["google-webrisk", "urlhaus"]
+  );
+  assert.throws(
+    () => getConfiguredReputationProviders({ providers: ["unknown-provider"] }),
+    /Unknown URL reputation provider/
+  );
+});
+
+test("keeps legacy Web Risk configuration working during migration", () => {
+  assert.deepEqual(
+    getConfiguredReputationProviders({ requireWebRisk: true }),
+    ["google-webrisk"]
+  );
+  assert.deepEqual(getConfiguredReputationProviders({ providers: [] }), []);
 });
