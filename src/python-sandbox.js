@@ -61,6 +61,9 @@ function getConfiguredReputationProviders(settings = {}) {
   const providers = [...new Set(configured.map(value => String(value).trim().toLowerCase()))];
   const unknown = providers.filter(name => !allowed.has(name));
   if (unknown.length) throw new Error("Unknown URL reputation provider(s): " + unknown.join(", "));
+  if (providers.length === 0) {
+    throw new Error("Python network access requires at least one URL reputation provider; refusing an unchecked request.");
+  }
   return providers;
 }
 
@@ -174,10 +177,15 @@ async function checkUrlReputation(parsed, settings) {
   const flagged = verdicts.filter(verdict => verdict.malicious);
   const expiries = verdicts.map(verdict => verdict.expiresAt).filter(Number.isFinite);
   const providerExpiry = expiries.length ? Math.min(...expiries) : NaN;
+  const now = Date.now();
+  const defaultCacheTtl = flagged.length ? 60 * 60_000 : 5 * 60_000;
+  // Never retain a verdict beyond the earliest provider-supplied expiry.
   const cacheTtl = Number.isFinite(providerExpiry)
-    ? Math.max(60_000, Math.min(24 * 60 * 60_000, providerExpiry - Date.now()))
-    : (flagged.length ? 60 * 60_000 : 5 * 60_000);
-  reputationCache.set(cacheKey, { allowed: flagged.length === 0, expiresAt: Date.now() + cacheTtl });
+    ? Math.min(defaultCacheTtl, Math.max(0, providerExpiry - now))
+    : defaultCacheTtl;
+  if (cacheTtl > 0) {
+    reputationCache.set(cacheKey, { allowed: flagged.length === 0, expiresAt: now + cacheTtl });
+  }
   while (reputationCache.size > 1024) reputationCache.delete(reputationCache.keys().next().value);
   if (flagged.length) {
     throw new Error("URL reputation check blocked this destination (" +
