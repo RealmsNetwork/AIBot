@@ -286,7 +286,8 @@ async function sampleSiblingChannels(message) {
         .filter(m => m.content?.trim() && !m.author?.bot)
         .map(m => {
           const name = m.member?.displayName || m.author?.globalName || m.author?.username || "user";
-          return `  ${name}: ${String(m.content).replace(/\s+/g, " ").slice(0, 220)}`;
+          const sentAt = new Date(m.createdTimestamp).toISOString();
+          return `  [${sentAt}] ${name}: ${String(m.content).replace(/\s+/g, " ").slice(0, 220)}`;
         });
       if (!lines.length) continue;
       blocks.push(`#${ch.name} recent public messages:\n${lines.join("\n")}`);
