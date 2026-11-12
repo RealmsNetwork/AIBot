@@ -122,7 +122,7 @@ function isSafetyBlockError(error) {
 }
 
 async function generateReply(config, messages, mode = "chat", systemContext = "") {
-  const { generateText } = await import("ai");
+  const { generateText, tool, isStepCount } = await import("ai");
   const { model, provider } = await resolveModel(config);
   const baseSystem = mode === "roast"
     ? config.roast.systemPrompt
@@ -143,6 +143,40 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
     maxOutputTokens: config.ai.maxOutputTokens,
     abortSignal: AbortSignal.timeout(config.ai.requestTimeoutMs)
   };
+
+  // Python is available only in ordinary chat mode. Roast generation stays fast and
+  // cannot spend its execution budget on unrelated code tasks.
+  if (config.python?.enabled && (mode !== "roast" || config.python.enabledInRoast)) {
+    const { runPython } = require("./python-sandbox");
+    generateArgs.tools = {
+      python: tool({
+        description: [
+          "Run bounded Python 3 code for calculations, data processing, and checking the current UTC time.",
+          "Use this only when computation or a real-time calculation is useful.",
+          "The interpreter has no shell, host filesystem, subprocesses, or raw network sockets.",
+          "For an approved public HTTPS GET request, use: from realmsnet import http_get; response = await http_get(url).",
+          "Network requests are reputation-checked and restricted; never try to bypass those controls."
+        ].join(" "),
+        inputSchema: {
+          type: "object",
+          properties: {
+            code: {
+              type: "string",
+              description: "Python 3 source code. Use print() to return results.",
+              maxLength: config.python.maxCodeChars || 12000
+            }
+          },
+          required: ["code"],
+          additionalProperties: false
+        },
+        execute: async ({ code }) => ({
+          output: await runPython(code, config.python)
+        })
+      })
+    };
+    generateArgs.stopWhen = isStepCount(Math.max(1, Math.min(4, config.python.maxToolSteps || 3)));
+    generateArgs.toolCallConcurrency = 1;
+  }
 
   const providerOptions = buildProviderOptions(provider.name, config);
   if (providerOptions) generateArgs.providerOptions = providerOptions;
