@@ -130,6 +130,10 @@ function parseTimeRequest(value, options = {}) {
     return formatCurrentTime(now, timeZone);
   }
 
+  const zoneQuestion = input.match(/^(?:what(?:'s| is)\s+)?(?:the\s+)?(?:current\s+)?time\s+in\s+([A-Za-z_]+\/[A-Za-z_]+)[?.!]*$/i)
+    || input.match(/^what\s+time\s+is\s+it\s+in\s+([A-Za-z_]+\/[A-Za-z_]+)[?.!]*$/i);
+  if (zoneQuestion) return formatCurrentTime(now, zoneQuestion[1]);
+
   const discord = input.match(/<t:(-?\d{9,13})(?::[tTdDfFR])?>/);
   const epoch = discord || input.match(/(?:unix|epoch|timestamp|convert)\D{0,24}(-?\d{9,13})/i);
   if (epoch && (discord || /unix|epoch|timestamp|convert|to date|to time/i.test(lower))) {
@@ -143,9 +147,11 @@ function parseTimeRequest(value, options = {}) {
     || input.match(/^(?:convert|turn)\s+(.+?)\s+(?:to|into)\s+(?:a\s+)?(?:unix\s+)?(?:timestamp|epoch|discord\s+timestamp)$/i)
     || input.match(/^(.+?)\s+(?:as|to)\s+(?:a\s+)?(?:unix\s+)?(?:timestamp|epoch|discord\s+timestamp)$/i);
   if (dateCommand) {
-    const date = parseDateInput(dateCommand[1], timeZone);
+    const requestedZone = dateCommand[1].match(/\s+([A-Za-z_]+\/[A-Za-z_]+)$/);
+    const displayZone = requestedZone ? requestedZone[1] : timeZone;
+    const date = parseDateInput(dateCommand[1], displayZone);
     if (!date) return "I couldn't parse that date/time. Include a clear date, time, and timezone, or use an ISO timestamp.";
-    return formatTimestampResult(date, timeZone);
+    return formatTimestampResult(date, displayZone);
   }
 
   const relative = input.match(/^(?:(?:what\s+(?:date|time)\s+(?:will\s+it\s+be\s+)?|when\s+is\s+)?(?:in\s+)?)(.+?)\s+(ago|from now|from today)$/i)
