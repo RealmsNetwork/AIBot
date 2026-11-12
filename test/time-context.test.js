@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isTimeQuestion, formatCurrentTime, parseDateInput, parseTimeRequest } = require("../src/time-context");
+const { isTimeQuestion, formatCurrentTime, parseDateInput, parseTimeRequest, stripUnrequestedDiscordTimestamps } = require("../src/time-context");
 
 const NOW = new Date("2026-11-12T14:56:00.000Z");
 
@@ -62,4 +62,20 @@ test("calculates the difference between two dates", () => {
 
 test("falls back to UTC for an invalid timezone", () => {
   assert.match(formatCurrentTime(NOW, "Not/A_Timezone"), /2:56:00 PM UTC/);
+});
+
+test("supports timezone-specific current clock requests", () => {
+  const answer = parseTimeRequest("what time is it in America/New_York", { now: NOW, timeZone: "UTC" });
+  assert.match(answer, /9:56:00 AM EST/);
+});
+
+test("accepts an IANA timezone on the supplied date and displays that zone", () => {
+  const answer = parseTimeRequest("unix timestamp for November 12, 2026 at 7:21 AM America/New_York", { now: NOW, timeZone: "UTC" });
+  assert.match(answer, /7:21:00 AM EST/);
+  assert.match(answer, /Unix seconds: 1794486060/);
+});
+
+test("strips unrequested AI-generated Discord timestamps", () => {
+  assert.equal(stripUnrequestedDiscordTimestamps("locked in at <t:1762950068:f> fr", "good work"), "locked in at  fr");
+  assert.equal(stripUnrequestedDiscordTimestamps("convert this <t:1762950068:f>", "convert <t:1762950068:f>"), "convert this <t:1762950068:f>");
 });
