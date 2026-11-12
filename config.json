@@ -161,7 +161,8 @@
       "ip"
     ],
     "includeVoiceChannelChats": true,
-    "timeZone": "UTC"
+    "timeZone": "UTC",
+    "siblingCacheTtlMs": 45000
   },
   "python": {
     "enabled": true,
