@@ -237,7 +237,10 @@ function toModelMessages(discordMessages, config, currentMessage) {
       : "";
     // Keep the actual body in its own user/assistant turn. The speaker label is metadata,
     // and no timestamped export-style prefix is added to the conversational text.
-    const content = `${author} (Discord user ID: ${userId}) said: ${message.content || ""}${attachmentText}`
+    const sentAt = config.conversation.includeTimestamps && Number.isFinite(message.createdTimestamp)
+      ? ` [sent at ${new Date(message.createdTimestamp).toISOString()}]`
+      : "";
+    const content = `${author}${sentAt} (Discord user ID: ${userId}) said: ${message.content || ""}${attachmentText}`
       .slice(0, config.conversation.maxMessageCharacters);
     result.push({ role: isAssistant ? "assistant" : "user", content });
   }
