@@ -68,7 +68,6 @@ async function checkUrlReputation(parsed, settings) {
   }
 
   const endpoint = new URL("https://webrisk.googleapis.com/v1/uris:search");
-  endpoint.searchParams.set("key", apiKey);
   endpoint.searchParams.set("uri", lookupUrl);
   endpoint.searchParams.append("threatTypes", "MALWARE");
   endpoint.searchParams.append("threatTypes", "SOCIAL_ENGINEERING");
@@ -76,7 +75,7 @@ async function checkUrlReputation(parsed, settings) {
 
   const response = await fetch(endpoint, {
     method: "GET",
-    headers: { "accept": "application/json" },
+    headers: { "accept": "application/json", "x-goog-api-key": apiKey },
     signal: AbortSignal.timeout(Math.min(8000, settings.timeoutMs || 8000))
   });
   if (response.status === 429) throw new Error("Google Web Risk quota reached; network access is temporarily blocked.");
