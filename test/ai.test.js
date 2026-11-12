@@ -32,7 +32,8 @@ test("maps human messages to user turns and bot replies to assistant turns", () 
   assert.deepEqual(result.map(item => item.role), ["user", "assistant", "user"]);
   assert.match(result[0].content, /@Human .* said: hi/);
   assert.match(result[1].content, /@AIBot .* said: hello/);
-  assert.doesNotMatch(result[0].content, /1970-01-01T00:00:01.000Z/);
+  assert.match(result[0].content, /sent at 1970-01-01T00:00:01.000Z/);
+  assert.doesNotMatch(result[0].content, /^\\[1970-01-01T00:00:01.000Z\\]/);
   assert.deepEqual(result.map(item => item.role), ["user", "assistant", "user"]);
 });
 
