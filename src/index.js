@@ -11,6 +11,7 @@ const {
   PermissionFlagsBits
 } = require("discord.js");
 const { generateReply, toModelMessages, SafetyBlockedError, isSafetyBlockError } = require("./ai");
+const { isTimeQuestion, formatCurrentTime } = require("./time-context");
 
 const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"));
 const chatChannelId = process.env.CHAT_CHANNEL_ID || config.channels.chatChannelId;
@@ -442,6 +443,31 @@ async function handleMessage(message) {
   activeRequests++;
   let stopTyping = () => {};
   try {
+    // Answer clock questions from the host clock directly. The language model has
+    // repeatedly hallucinated stale years despite receiving the current timestamp.
+    if (isTimeQuestion(message.content)) {
+      const answer = formatCurrentTime(new Date(), contextCfg.timeZone || "UTC");
+      const content = mode === "roast" && !config.conversation.replyToTriggerMessage
+        ? `<@${message.author.id}> ${answer}`
+        : answer;
+      const options = {
+        content,
+        allowedMentions: {
+          parse: [],
+          users: mode === "roast" && !config.conversation.replyToTriggerMessage ? [message.author.id] : [],
+          roles: [],
+          repliedUser: mode === "roast"
+        }
+      };
+      if (config.conversation.replyToTriggerMessage) {
+        await message.reply({ ...options, failIfNotExists: false });
+      } else {
+        await message.channel.send(options);
+      }
+      log("info", `Answered time question deterministically using ${contextCfg.timeZone || "UTC"}`);
+      return;
+    }
+
     stopTyping = await keepTyping(message.channel);
     const history = await fetchConversation(message);
     const messages = toModelMessages(history, config, message);
@@ -476,7 +502,7 @@ async function handleMessage(message) {
     if (safetyBlocked) {
       log("info", "AI reply blocked by safety filters", error?.message || String(error));
     } else {
-      log("error", "Automatic AI reply failed", error?.message || String(error));
+      log("error", "Automatic AI reply failed", error?.stack || error?.message || String(error));
     }
     try {
       const notice = safetyBlocked
