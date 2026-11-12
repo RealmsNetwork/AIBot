@@ -13,7 +13,7 @@
   "conversation": {
     "historyLimit": 40,
     "maxMessageCharacters": 4000,
-    "includeTimestamps": false,
+    "includeTimestamps": true,
     "includeReplyContext": true,
     "respondToOwnBotMessages": false,
     "replyToTriggerMessage": false
