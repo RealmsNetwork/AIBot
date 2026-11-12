@@ -70,6 +70,8 @@ function getConfiguredReputationProviders(settings = {}) {
 async function requestReputationJson(url, options, timeoutMs) {
   const response = await fetch(url, {
     ...options,
+    // Reputation endpoints must never forward provider credentials through redirects.
+    redirect: "error",
     signal: AbortSignal.timeout(Math.min(10000, Math.max(1000, timeoutMs || 8000)))
   });
   if (response.status === 429) throw new Error("A URL reputation provider rate limit was reached.");
@@ -270,18 +272,25 @@ function runPython(code, config = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let requestCount = { count: 0 };
-    const worker = new Worker(path.join(__dirname, "python-worker.js"), {
-      workerData: {
-        code,
-        maxOutputChars: Math.max(500, Math.min(10_000, config.maxOutputChars || 6000)),
-        networkEnabled: networkSettings.enabled
-      },
-      resourceLimits: {
-        maxOldGenerationSizeMb: 96,
-        maxYoungGenerationSizeMb: 24,
-        stackSizeMb: 4
-      }
-    });
+    let worker;
+    try {
+      worker = new Worker(path.join(__dirname, "python-worker.js"), {
+        workerData: {
+          code,
+          maxOutputChars: Math.max(500, Math.min(10_000, config.maxOutputChars || 6000)),
+          networkEnabled: networkSettings.enabled
+        },
+        resourceLimits: {
+          maxOldGenerationSizeMb: 96,
+          maxYoungGenerationSizeMb: 24,
+          stackSizeMb: 4
+        }
+      });
+    } catch (error) {
+      activeRuns = Math.max(0, activeRuns - 1);
+      reject(new Error("Could not start the Python sandbox worker: " + error.message));
+      return;
+    }
 
     const finish = async (error, result) => {
       if (settled) return;
