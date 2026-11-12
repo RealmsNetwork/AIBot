@@ -163,6 +163,14 @@ function isExcludedChannelName(name) {
 
 function isPublicChannel(channel, guild = channel?.guild, botMember = guild?.members?.me) {
   if (!channel || !guild || !botMember) return false;
+  if (channel.isThread?.() && channel.type !== ChannelType.PublicThread) return false;
+  const supportedTypes = [
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.PublicThread,
+    ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
+  ];
+  if (!supportedTypes.includes(channel.type)) return false;
   const parentChannel = channel.isThread?.() ? channel.parent : channel;
   const categoryName = parentChannel?.parent?.name;
   if (isExcludedChannelName(channel.name) ||
