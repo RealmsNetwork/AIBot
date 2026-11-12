@@ -479,7 +479,7 @@ async function handleMessage(message) {
     const messages = toModelMessages(history, config, message);
     const systemContext = await buildSystemContext(message, mode);
     const result = await generateReply(config, messages, mode, systemContext);
-    const safeResultText = stripUnrequestedDiscordTimestamps(result.text, message.content);
+    const safeResultText = stripUnrequestedDiscordTimestamps(result.text, message.content, new Date(), contextCfg.timeZone || "UTC");
     // If the bot is configured to send a normal channel message instead of a Discord reply,
     // add a real user mention so roast notifications still reach the target account.
     const responseText = mode === "roast" && !config.conversation.replyToTriggerMessage
