@@ -8,8 +8,6 @@ const { Agent, fetch } = require("undici");
 
 let activeRuns = 0;
 const reputationCache = new Map();
-let virusTotalQueue = Promise.resolve();
-let nextVirusTotalRequestAt = 0;
 
 function ipv4ToNumber(address) {
   const parts = address.split(".").map(Number);
@@ -55,53 +53,51 @@ function validateHttpsUrl(value) {
   return parsed;
 }
 
-async function waitForVirusTotalSlot() {
-  let release;
-  const previous = virusTotalQueue;
-  virusTotalQueue = new Promise(resolve => { release = resolve; });
-  await previous;
-  try {
-    const waitMs = Math.max(0, nextVirusTotalRequestAt - Date.now());
-    if (waitMs) {
-      throw new Error("VirusTotal public API cooldown active; retry in " + Math.ceil(waitMs / 1000) + " seconds.");
-    }
-    nextVirusTotalRequestAt = Date.now() + 15_000;
-  } finally {
-    release();
-  }
-}
+async function checkUrlReputation(parsed, settings) {
+  if (!settings.requireWebRisk) return;
+  const apiKey = process.env.GOOGLE_WEBRISK_API_KEY;
+  if (!apiKey) throw new Error("Network access is locked: configure GOOGLE_WEBRISK_API_KEY to enable URL reputation checks.");
 
-async function checkDomainReputation(hostname, settings) {
-  if (!settings.requireVirusTotal) return;
-  const apiKey = process.env.VIRUSTOTAL_API_KEY;
-  if (!apiKey) throw new Error("Network access is locked: configure VIRUSTOTAL_API_KEY to enable reputation checks.");
-
-  const cached = reputationCache.get(hostname);
+  // Keep the path for threat matching, but never disclose query strings or fragments
+  // (which may contain tokens or signed URLs) to the reputation provider.
+  const lookupUrl = parsed.origin + parsed.pathname;
+  const cached = reputationCache.get(lookupUrl);
   if (cached && cached.expiresAt > Date.now()) {
-    if (!cached.allowed) throw new Error("The destination domain failed its reputation check.");
+    if (!cached.allowed) throw new Error("The destination URL failed its reputation check.");
     return;
   }
 
-  await waitForVirusTotalSlot();
-  const response = await fetch("https://www.virustotal.com/api/v3/domains/" + encodeURIComponent(hostname), {
-    headers: { "x-apikey": apiKey, "accept": "application/json" },
+  const endpoint = new URL("https://webrisk.googleapis.com/v1/uris:search");
+  endpoint.searchParams.set("key", apiKey);
+  endpoint.searchParams.set("uri", lookupUrl);
+  endpoint.searchParams.append("threatTypes", "MALWARE");
+  endpoint.searchParams.append("threatTypes", "SOCIAL_ENGINEERING");
+  endpoint.searchParams.append("threatTypes", "UNWANTED_SOFTWARE");
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: { "accept": "application/json" },
     signal: AbortSignal.timeout(Math.min(8000, settings.timeoutMs || 8000))
   });
-
-  if (response.status === 404) {
-    reputationCache.set(hostname, { allowed: false, expiresAt: Date.now() + 10 * 60_000 });
-    throw new Error("VirusTotal has no reputation record for this domain; unknown destinations are blocked.");
-  }
-  if (response.status === 429) throw new Error("VirusTotal rate limit reached; network access is temporarily blocked.");
-  if (!response.ok) throw new Error("VirusTotal reputation lookup failed (HTTP " + response.status + ").");
+  if (response.status === 429) throw new Error("Google Web Risk quota reached; network access is temporarily blocked.");
+  if (!response.ok) throw new Error("Google Web Risk lookup failed (HTTP " + response.status + ").");
 
   const body = await response.json();
-  const stats = body?.data?.attributes?.last_analysis_stats;
-  if (!stats || typeof stats !== "object") throw new Error("VirusTotal returned no usable reputation data; destination blocked.");
-  const allowed = Number(stats.malicious || 0) === 0 && Number(stats.suspicious || 0) === 0;
-  reputationCache.set(hostname, { allowed, expiresAt: Date.now() + 60 * 60_000 });
-  if (!allowed) throw new Error("The destination domain was flagged as malicious or suspicious.");
-  while (reputationCache.size > 512) reputationCache.delete(reputationCache.keys().next().value);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Google Web Risk returned an invalid response; destination blocked.");
+  }
+  const threatTypes = body.threat?.threatTypes;
+  if (body.threat && (!Array.isArray(threatTypes) || threatTypes.length === 0)) {
+    throw new Error("Google Web Risk returned an incomplete threat verdict; destination blocked.");
+  }
+  const allowed = !Array.isArray(threatTypes) || threatTypes.length === 0;
+  const providerExpiry = body.threat?.expireTime ? Date.parse(body.threat.expireTime) : NaN;
+  const cacheTtl = Number.isFinite(providerExpiry)
+    ? Math.max(60_000, Math.min(24 * 60 * 60_000, providerExpiry - Date.now()))
+    : (allowed ? 5 * 60_000 : 60 * 60_000);
+  reputationCache.set(lookupUrl, { allowed, expiresAt: Date.now() + cacheTtl });
+  while (reputationCache.size > 1024) reputationCache.delete(reputationCache.keys().next().value);
+  if (!allowed) throw new Error("Google Web Risk flagged this URL: " + threatTypes.join(", ") + ".");
 }
 
 async function resolvePublicIPv4(hostname) {
@@ -117,7 +113,7 @@ async function fetchApprovedUrl(value, settings, requestCount) {
     throw new Error("This Python run has reached its network request limit.");
   }
   requestCount.count++;
-  await checkDomainReputation(parsed.hostname, settings);
+  await checkUrlReputation(parsed, settings);
 
   const pinnedAddress = await resolvePublicIPv4(parsed.hostname);
   const dispatcher = new Agent({
