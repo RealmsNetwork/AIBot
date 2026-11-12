@@ -122,7 +122,7 @@ function isSafetyBlockError(error) {
 }
 
 async function generateReply(config, messages, mode = "chat", systemContext = "") {
-  const { generateText, tool, isStepCount } = await import("ai");
+  const { generateText, tool, isStepCount, jsonSchema } = await import("ai");
   const { model, provider } = await resolveModel(config);
   const baseSystem = mode === "roast"
     ? config.roast.systemPrompt
@@ -157,7 +157,7 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
           "For an approved public HTTPS GET request, use: from realmsnet import http_get; response = await http_get(url).",
           "Network requests are reputation-checked and restricted; never try to bypass those controls."
         ].join(" "),
-        inputSchema: {
+        inputSchema: jsonSchema({
           type: "object",
           properties: {
             code: {
@@ -168,7 +168,7 @@ async function generateReply(config, messages, mode = "chat", systemContext = ""
           },
           required: ["code"],
           additionalProperties: false
-        },
+        }),
         execute: async ({ code }) => ({
           output: await runPython(code, config.python)
         })
