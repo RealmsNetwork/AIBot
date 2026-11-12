@@ -95,7 +95,7 @@ function parseDateInput(value, timeZone = "UTC") {
     timeZone = zoneMatch[1];
     input = input.slice(0, zoneMatch.index).trim();
   }
-  const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?-?\d{9,13})$/i);
+  const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?\d{9,13})$/i);
   if (epoch) {
     const number = Number(epoch[1]);
     return validDate(Math.abs(number) >= 100000000000 ? number : number * 1000);
@@ -130,7 +130,7 @@ function parseTimeRequest(value, options = {}) {
     return formatCurrentTime(now, timeZone);
   }
 
-  const zoneQuestion = input.match(/^(?:what(?:'s| is)\s+)?(?:the\s+)?(?:current\s+)?time\s+in\s+([A-Za-z_]+\/[A-Za-z_]+)[?.!]*$/i)
+  const zoneQuestion = input.match(/^(?:what(?:'s| is)\s+)?(?:the\s+)?(?:current\s+)?time\s+in\s+([A-Za-z_+-]+(?:\/[A-Za-z_+-]+)+)[?.!]*$/i)
     || input.match(/^what\s+time\s+is\s+it\s+in\s+([A-Za-z_]+\/[A-Za-z_]+)[?.!]*$/i);
   if (zoneQuestion) return formatCurrentTime(now, zoneQuestion[1]);
 
