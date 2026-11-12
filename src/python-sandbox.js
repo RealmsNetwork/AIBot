@@ -53,52 +53,137 @@ function validateHttpsUrl(value) {
   return parsed;
 }
 
-async function checkUrlReputation(parsed, settings) {
-  if (!settings.requireWebRisk) return;
+function getConfiguredReputationProviders(settings = {}) {
+  const configured = Array.isArray(settings.providers)
+    ? settings.providers
+    : (settings.requireWebRisk ? ["google-webrisk"] : []);
+  const allowed = new Set(["google-webrisk", "urlhaus", "virustotal"]);
+  const providers = [...new Set(configured.map(value => String(value).trim().toLowerCase()))];
+  const unknown = providers.filter(name => !allowed.has(name));
+  if (unknown.length) throw new Error("Unknown URL reputation provider(s): " + unknown.join(", "));
+  return providers;
+}
+
+async function requestReputationJson(url, options, timeoutMs) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(Math.min(10000, Math.max(1000, timeoutMs || 8000)))
+  });
+  if (response.status === 429) throw new Error("A URL reputation provider rate limit was reached.");
+  if (!response.ok) throw new Error("A URL reputation provider failed (HTTP " + response.status + ").");
+  const body = await response.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("A URL reputation provider returned an invalid response.");
+  }
+  return body;
+}
+
+async function queryGoogleWebRisk(lookupUrl, settings) {
   const apiKey = process.env.GOOGLE_WEBRISK_API_KEY;
-  if (!apiKey) throw new Error("Network access is locked: configure GOOGLE_WEBRISK_API_KEY to enable URL reputation checks.");
+  if (!apiKey) throw new Error("Google Web Risk is enabled but GOOGLE_WEBRISK_API_KEY is not configured.");
+  const endpoint = new URL("https://webrisk.googleapis.com/v1/uris:search");
+  endpoint.searchParams.set("uri", lookupUrl);
+  for (const type of ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]) {
+    endpoint.searchParams.append("threatTypes", type);
+  }
+  const body = await requestReputationJson(endpoint, {
+    method: "GET",
+    headers: { "accept": "application/json", "x-goog-api-key": apiKey }
+  }, settings.timeoutMs);
+  const threatTypes = body.threat?.threatTypes;
+  if (body.threat && (!Array.isArray(threatTypes) || threatTypes.length === 0)) {
+    throw new Error("Google Web Risk returned an incomplete threat verdict.");
+  }
+  return {
+    name: "google-webrisk",
+    malicious: Array.isArray(threatTypes) && threatTypes.length > 0,
+    details: Array.isArray(threatTypes) ? threatTypes.join(", ") : "",
+    expiresAt: body.threat?.expireTime ? Date.parse(body.threat.expireTime) : NaN
+  };
+}
+
+async function queryUrlhaus(lookupUrl, settings) {
+  const apiKey = process.env.URLHAUS_AUTH_KEY;
+  if (!apiKey) throw new Error("URLhaus is enabled but URLHAUS_AUTH_KEY is not configured.");
+  const body = await requestReputationJson("https://urlhaus-api.abuse.ch/v1/url/", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+      "Auth-Key": apiKey
+    },
+    body: new URLSearchParams({ url: lookupUrl })
+  }, settings.timeoutMs);
+  if (body.query_status === "no_results") {
+    return { name: "urlhaus", malicious: false, details: "" };
+  }
+  if (body.query_status !== "ok") {
+    throw new Error("URLhaus returned an unexpected query status.");
+  }
+  return {
+    name: "urlhaus",
+    malicious: true,
+    details: String(body.threat || "known malware URL")
+  };
+}
+
+async function queryVirusTotal(lookupUrl, settings) {
+  const apiKey = process.env.VIRUSTOTAL_API_KEY;
+  if (!apiKey) throw new Error("VirusTotal is enabled but VIRUSTOTAL_API_KEY is not configured.");
+  const urlId = Buffer.from(lookupUrl).toString("base64")
+    .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const body = await requestReputationJson("https://www.virustotal.com/api/v3/urls/" + urlId, {
+    method: "GET",
+    headers: { "accept": "application/json", "x-apikey": apiKey }
+  }, settings.timeoutMs);
+  const stats = body.data?.attributes?.last_analysis_stats;
+  if (!stats || !Number.isFinite(Number(stats.malicious))) {
+    throw new Error("VirusTotal returned an incomplete analysis verdict.");
+  }
+  const malicious = Number(stats.malicious) > 0 ||
+    (settings.virusTotalBlockSuspicious && Number(stats.suspicious || 0) > 0);
+  return {
+    name: "virustotal",
+    malicious,
+    details: Number(stats.malicious) + " malicious engine(s)"
+  };
+}
+
+async function checkUrlReputation(parsed, settings) {
+  const providers = getConfiguredReputationProviders(settings);
+  if (!providers.length) return;
 
   // Keep the path for threat matching, but never disclose query strings or fragments
-  // (which may contain tokens or signed URLs) to the reputation provider.
+  // (which may contain tokens or signed URLs) to reputation providers.
   const lookupUrl = parsed.origin + parsed.pathname;
-  const cached = reputationCache.get(lookupUrl);
+  const cacheKey = providers.slice().sort().join(",") + ":" + lookupUrl;
+  const cached = reputationCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     if (!cached.allowed) throw new Error("The destination URL failed its reputation check.");
     return;
   }
 
-  const endpoint = new URL("https://webrisk.googleapis.com/v1/uris:search");
-  endpoint.searchParams.set("uri", lookupUrl);
-  endpoint.searchParams.append("threatTypes", "MALWARE");
-  endpoint.searchParams.append("threatTypes", "SOCIAL_ENGINEERING");
-  endpoint.searchParams.append("threatTypes", "UNWANTED_SOFTWARE");
-
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers: { "accept": "application/json", "x-goog-api-key": apiKey },
-    signal: AbortSignal.timeout(Math.min(8000, settings.timeoutMs || 8000))
-  });
-  if (response.status === 429) throw new Error("Google Web Risk quota reached; network access is temporarily blocked.");
-  if (!response.ok) throw new Error("Google Web Risk lookup failed (HTTP " + response.status + ").");
-
-  const body = await response.json();
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new Error("Google Web Risk returned an invalid response; destination blocked.");
-  }
-  const threatTypes = body.threat?.threatTypes;
-  if (body.threat && (!Array.isArray(threatTypes) || threatTypes.length === 0)) {
-    throw new Error("Google Web Risk returned an incomplete threat verdict; destination blocked.");
-  }
-  const allowed = !Array.isArray(threatTypes) || threatTypes.length === 0;
-  const providerExpiry = body.threat?.expireTime ? Date.parse(body.threat.expireTime) : NaN;
+  const adapters = {
+    "google-webrisk": queryGoogleWebRisk,
+    urlhaus: queryUrlhaus,
+    virustotal: queryVirusTotal
+  };
+  // Run independent providers concurrently to keep latency low. Any provider error
+  // rejects the check, preserving the sandbox's fail-closed network policy.
+  const verdicts = await Promise.all(providers.map(name => adapters[name](lookupUrl, settings)));
+  const flagged = verdicts.filter(verdict => verdict.malicious);
+  const expiries = verdicts.map(verdict => verdict.expiresAt).filter(Number.isFinite);
+  const providerExpiry = expiries.length ? Math.min(...expiries) : NaN;
   const cacheTtl = Number.isFinite(providerExpiry)
     ? Math.max(60_000, Math.min(24 * 60 * 60_000, providerExpiry - Date.now()))
-    : (allowed ? 5 * 60_000 : 60 * 60_000);
-  reputationCache.set(lookupUrl, { allowed, expiresAt: Date.now() + cacheTtl });
+    : (flagged.length ? 60 * 60_000 : 5 * 60_000);
+  reputationCache.set(cacheKey, { allowed: flagged.length === 0, expiresAt: Date.now() + cacheTtl });
   while (reputationCache.size > 1024) reputationCache.delete(reputationCache.keys().next().value);
-  if (!allowed) throw new Error("Google Web Risk flagged this URL: " + threatTypes.join(", ") + ".");
+  if (flagged.length) {
+    throw new Error("URL reputation check blocked this destination (" +
+      flagged.map(verdict => verdict.name + (verdict.details ? ": " + verdict.details : "")).join("; ") + ").");
+  }
 }
-
 async function resolvePublicIPv4(hostname) {
   const records = await lookup(hostname, { all: true, verbatim: true });
   const publicRecord = records.find(record => record.family === 4 && isPublicIPv4(record.address));
@@ -166,7 +251,9 @@ function runPython(code, config = {}) {
   const timeoutMs = Math.max(1000, Math.min(15_000, config.maxExecutionMs || 8000));
   const networkSettings = {
     enabled: Boolean(config.network?.enabled),
-    requireVirusTotal: config.network?.requireVirusTotal !== false,
+    providers: config.network?.providers,
+    requireWebRisk: config.network?.requireWebRisk,
+    virusTotalBlockSuspicious: Boolean(config.network?.virusTotalBlockSuspicious),
     maxRequestsPerRun: config.network?.maxRequestsPerRun || 3,
     maxResponseBytes: config.network?.maxResponseBytes || 12_000,
     timeoutMs: config.network?.timeoutMs || 8000
@@ -225,4 +312,4 @@ function runPython(code, config = {}) {
   });
 }
 
-module.exports = { runPython, isPublicIPv4, validateHttpsUrl };
+module.exports = { runPython, isPublicIPv4, validateHttpsUrl, getConfiguredReputationProviders };
