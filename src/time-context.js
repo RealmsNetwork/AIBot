@@ -199,4 +199,18 @@ function parseTimeRequest(value, options = {}) {
   return null;
 }
 
-module.exports = { isTimeQuestion, formatCurrentTime, formatDateTime, parseDateInput, parseTimeRequest };
+function stripUnrequestedDiscordTimestamps(response, userMessage) {
+  const request = String(userMessage || "");
+  const explicitlyRequested = /(?:<t:-?\d{9,13}(?::[tTdDfFR])?>|\b(?:unix|epoch|timestamp|date|time|clock)\b)/i.test(request);
+  if (explicitlyRequested) return String(response || "");
+  return String(response || "").replace(/<t:-?\d{9,13}(?::[tTdDfFR])?>/gi, "");
+}
+
+module.exports = {
+  isTimeQuestion,
+  formatCurrentTime,
+  formatDateTime,
+  parseDateInput,
+  parseTimeRequest,
+  stripUnrequestedDiscordTimestamps
+};
