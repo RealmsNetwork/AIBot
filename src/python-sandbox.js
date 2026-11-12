@@ -4,7 +4,7 @@ const path = require("node:path");
 const { Worker } = require("node:worker_threads");
 const { lookup } = require("node:dns/promises");
 const { isIP } = require("node:net");
-const { Agent } = require("undici");
+const { Agent, fetch } = require("undici");
 
 let activeRuns = 0;
 const reputationCache = new Map();
