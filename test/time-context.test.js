@@ -86,3 +86,28 @@ test("converts relative calendar dates with local clock times", () => {
   const weekday = parseTimeRequest("unix timestamp for next Monday at 5:00 PM", { now: NOW, timeZone: "UTC" });
   assert.match(weekday, /Monday, November 16, 2026 at 5:00:00 PM UTC/);
 });
+
+test("rewrites hallucinated current date/time claims using the live clock", () => {
+  const output = stripUnrequestedDiscordTimestamps(
+    "it's November 12, 2025 at 10:32 AM, and the clock is cooperating",
+    "bro really pulled the vending machine lever",
+    NOW,
+    "UTC"
+  );
+  assert.equal(output, "it's Thursday, November 12, 2026 at 2:56:00 PM UTC, and the clock is cooperating");
+});
+
+test("does not rewrite historical date/time claims when the user explicitly asks about time", () => {
+  const response = "It was November 12, 2025 at 10:32 AM.";
+  assert.equal(stripUnrequestedDiscordTimestamps(response, "what time was it on November 12, 2025?"), response);
+});
+
+test("removes fabricated Discord tags and corrects current date claims together", () => {
+  const output = stripUnrequestedDiscordTimestamps(
+    "it's November 12, 2025 at 10:32 AM <t:1762950068:f>",
+    "make a roast",
+    NOW,
+    "UTC"
+  );
+  assert.equal(output, "it's Thursday, November 12, 2026 at 2:56:00 PM UTC ");
+});
