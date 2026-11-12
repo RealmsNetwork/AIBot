@@ -11,7 +11,7 @@ const {
   PermissionFlagsBits
 } = require("discord.js");
 const { generateReply, toModelMessages, SafetyBlockedError, isSafetyBlockError } = require("./ai");
-const { isTimeQuestion, formatCurrentTime } = require("./time-context");
+const { parseTimeRequest } = require("./time-context");
 
 const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"));
 const chatChannelId = process.env.CHAT_CHANNEL_ID || config.channels.chatChannelId;
@@ -443,10 +443,14 @@ async function handleMessage(message) {
   activeRequests++;
   let stopTyping = () => {};
   try {
-    // Answer clock questions from the host clock directly. The language model has
-    // repeatedly hallucinated stale years despite receiving the current timestamp.
-    if (isTimeQuestion(message.content)) {
-      const answer = formatCurrentTime(new Date(), contextCfg.timeZone || "UTC");
+    // Handle clock queries and date/time calculations deterministically. Never ask
+    // the language model to invent or calculate Unix timestamps.
+    const timeAnswer = parseTimeRequest(message.content, {
+      now: new Date(),
+      timeZone: contextCfg.timeZone || "UTC"
+    });
+    if (timeAnswer) {
+      const answer = timeAnswer;
       const content = mode === "roast" && !config.conversation.replyToTriggerMessage
         ? `<@${message.author.id}> ${answer}`
         : answer;
