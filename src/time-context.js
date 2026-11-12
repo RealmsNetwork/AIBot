@@ -177,7 +177,7 @@ function parseTimeRequest(value, options = {}) {
     }
   }
 
-  const difference = input.match(/^(?:difference|time between)\s+(.+?)\s+and\s+(.+)$/i);
+  const difference = input.match(/^(?:difference\s+between|time between)\s+(.+?)\s+and\s+(.+)$/i);
   if (difference) {
     const first = parseDateInput(difference[1], timeZone);
     const second = parseDateInput(difference[2], timeZone);
