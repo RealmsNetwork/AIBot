@@ -177,7 +177,8 @@
       "maxRequestsPerRun": 3,
       "maxResponseBytes": 12000,
       "timeoutMs": 8000,
-      "requireWebRisk": true
+      "providers": ["google-webrisk"],
+      "virusTotalBlockSuspicious": false
     }
   }
 }
