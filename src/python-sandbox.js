@@ -8,6 +8,8 @@ const { Agent, fetch } = require("undici");
 
 let activeRuns = 0;
 const reputationCache = new Map();
+let virusTotalQueue = Promise.resolve();
+let nextVirusTotalRequestAt = 0;
 
 function ipv4ToNumber(address) {
   const parts = address.split(".").map(Number);
@@ -53,6 +55,20 @@ function validateHttpsUrl(value) {
   return parsed;
 }
 
+async function waitForVirusTotalSlot() {
+  let release;
+  const previous = virusTotalQueue;
+  virusTotalQueue = new Promise(resolve => { release = resolve; });
+  await previous;
+  try {
+    const waitMs = Math.max(0, nextVirusTotalRequestAt - Date.now());
+    if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+    nextVirusTotalRequestAt = Date.now() + 15_000;
+  } finally {
+    release();
+  }
+}
+
 async function checkDomainReputation(hostname, settings) {
   if (!settings.requireVirusTotal) return;
   const apiKey = process.env.VIRUSTOTAL_API_KEY;
@@ -64,6 +80,7 @@ async function checkDomainReputation(hostname, settings) {
     return;
   }
 
+  await waitForVirusTotalSlot();
   const response = await fetch("https://www.virustotal.com/api/v3/domains/" + encodeURIComponent(hostname), {
     headers: { "x-apikey": apiKey, "accept": "application/json" },
     signal: AbortSignal.timeout(Math.min(8000, settings.timeoutMs || 8000))
