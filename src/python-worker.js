@@ -23,28 +23,51 @@ parentPort.on("message", message => {
   else pending.resolve(message.result);
 });
 
-function safeHttpGet(url) {
-  if (!workerData.networkEnabled) return Promise.reject(new Error("Network access is disabled."));
+function opaqueThenable(promise) {
+  // Expose only a thenable, not a normal Promise object with a constructor chain.
+  const then = (onFulfilled, onRejected) => {
+    Promise.prototype.then.call(promise, onFulfilled, onRejected);
+  };
+  Object.setPrototypeOf(then, null);
+  Object.setPrototypeOf(promise, null);
+  Object.defineProperty(promise, "then", {
+    value: then,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
+  return promise;
+}
+
+const safeHttpGet = url => {
+  if (!workerData.networkEnabled) {
+    return opaqueThenable(Promise.reject(new Error("Network access is disabled.")));
+  }
   const id = ++requestId;
-  return new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
     pendingRequests.set(id, { resolve, reject });
     parentPort.postMessage({ type: "network_request", requestId: id, url: String(url) });
   });
-}
+  return opaqueThenable(promise);
+};
+Object.setPrototypeOf(safeHttpGet, null);
 
 async function main() {
   try {
     const { loadPyodide } = await import("pyodide");
-    const exposedGlobals = { safeHttpGet };
+    // Pyodide's Python-to-JS bridge sees a null-prototype object containing
+    // only the mediated HTTPS helper, never Node's real globalThis/process/fetch.
+    const exposedGlobals = Object.create(null);
+    exposedGlobals.safeHttpGet = safeHttpGet;
     const pyodide = await loadPyodide({
       jsglobals: exposedGlobals,
       stdout: appendOutput,
       stderr: value => appendOutput(value)
     });
 
-    pyodide.registerJsModule("realmsnet", {
-      http_get: async url => await safeHttpGet(String(url))
-    });
+    const realmsnetModule = Object.create(null);
+    realmsnetModule.http_get = safeHttpGet;
+    pyodide.registerJsModule("realmsnet", realmsnetModule);
 
     const result = await pyodide.runPythonAsync(workerData.code);
     let finalValue = "";
