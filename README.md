@@ -101,7 +101,7 @@ This is defense in depth, not a guarantee that arbitrary code is harmless. Keep 
 
 ## Discord context coverage
 
-The bot builds a map of up to 120 readable public channels and samples recent messages from up to 20 other public channels per context refresh (cached for 45 seconds). Supported context sources include text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs View Channel and Read Message History, plus Connect for voice-channel text chat. Private/staff-name exclusions remain configurable.
+The bot builds a map of up to 120 readable public channels and samples recent messages from up to 20 other public channels per context refresh (cached for 45 seconds). A channel must be visible to `@everyone` as well as readable by the bot; private channels and private threads are not used, and staff-ish channel/category names are excluded by default. Supported context sources include text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs View Channel and Read Message History, plus Connect for voice-channel text chat.
 
 ## Dependency checks and tests
 
