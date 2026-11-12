@@ -13,7 +13,7 @@
     "start:worker": "node src/index.js",
     "dev": "node --watch src/manager.js",
     "check:deps": "node scripts/check-deps.js",
-    "check": "npm run check:deps && node --check src/index.js && node --check src/ai.js && node --check src/manager.js",
+    "check": "npm run check:deps && node --check src/index.js && node --check src/ai.js && node --check src/manager.js && node --check src/python-sandbox.js && node --check src/python-worker.js",
     "test": "node --test"
   },
   "dependencies": {
@@ -23,7 +23,9 @@
     "@ai-sdk/xai": "^5.0.0",
     "ai": "^7.0.0",
     "discord.js": "^14.22.1",
-    "dotenv": "^16.6.1"
+    "dotenv": "^16.6.1",
+    "pyodide": "^0.29.5",
+    "undici": "^7.30.2"
   },
   "keywords": [
     "discord",

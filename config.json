@@ -13,7 +13,7 @@
   "conversation": {
     "historyLimit": 40,
     "maxMessageCharacters": 4000,
-    "includeTimestamps": false,
+    "includeTimestamps": true,
     "includeReplyContext": true,
     "respondToOwnBotMessages": false,
     "replyToTriggerMessage": false
@@ -127,10 +127,10 @@
     "includeGuildMap": true,
     "includeCurrentChannelMeta": true,
     "includeChannelTopics": true,
-    "maxGuildChannelsListed": 60,
+    "maxGuildChannelsListed": 120,
     "sampleOtherChannels": true,
     "sampleMessagesPerChannel": 4,
-    "maxSampleChannels": 4,
+    "maxSampleChannels": 20,
     "guildMapCacheTtlMs": 300000,
     "preferPublicChannels": true,
     "excludeChannelNamePatterns": [
@@ -159,6 +159,26 @@
       "chat",
       "welcome",
       "ip"
-    ]
+    ],
+    "includeVoiceChannelChats": true,
+    "timeZone": "UTC",
+    "siblingCacheTtlMs": 45000
+  },
+  "python": {
+    "enabled": true,
+    "enabledInRoast": false,
+    "maxExecutionMs": 8000,
+    "maxCodeChars": 12000,
+    "maxOutputChars": 6000,
+    "maxConcurrentRuns": 1,
+    "maxToolSteps": 3,
+    "network": {
+      "enabled": true,
+      "maxRequestsPerRun": 3,
+      "maxResponseBytes": 12000,
+      "timeoutMs": 8000,
+      "providers": ["google-webrisk"],
+      "virusTotalBlockSuspicious": false
+    }
   }
 }

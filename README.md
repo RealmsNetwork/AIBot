@@ -89,6 +89,41 @@ This supports many model families, not literally every model on the internet. A 
 
 See `config.json` for provider models, system prompts, channel IDs, history length, timestamps, typing, roast behavior, and request limits. Environment variables override the main provider and channel settings. Never commit `.env` or API keys.
 
+## Python interpreter and execution safety
+
+The AI can use a Python 3 interpreter for calculations, time/date work, and bounded data processing. It runs in a fresh Pyodide/WebAssembly worker for each execution, not inside the Discord bot's main JavaScript thread. The worker is terminated after the configured time limit; output, source length, concurrent runs, and its V8 heap are bounded. Docker Compose also caps the whole bot container at 1 GiB RAM, 1.5 CPU, and 128 processes. The Python-to-JavaScript bridge exposes only the mediated HTTPS helper through a restricted global object; it does not expose Node's process, filesystem, or native fetch globals. Pyodide does not provide shell commands, host filesystem access, subprocess execution, or native mining binaries.
+
+Network access is not a raw socket or unrestricted internet connection. Python code must use the `realmsnet.http_get(url)` helper, which permits HTTPS GET only, resolves and pins a public IPv4 destination, rejects private/local destinations and redirects, limits response size and request count, caches reputation verdicts, and applies a URL reputation check. Network access is fail-closed unless the reputation service is configured.
+
+URL reputation providers are configured under `python.network.providers` in `config.json`. The default is `["google-webrisk"]`; add one or more of the supported provider IDs to enable additional checks. All enabled providers are queried concurrently to reduce latency. A positive result from any provider blocks the destination, and an error, quota response, missing credential, or malformed verdict from any enabled provider fails closed.
+
+| Provider ID | Credential | Coverage and notes |
+|---|---|---|
+| `google-webrisk` | `GOOGLE_WEBRISK_API_KEY` | Google's malware, social-engineering/phishing, and unwanted-software lists. Create a Google Cloud project, enable Web Risk and billing, then restrict the API key to Web Risk. Google currently documents 6,000 `SearchUris` requests/minute per Cloud project and 100,000 free Lookup calls/month; additional calls are currently $0.50 per 1,000. |
+| `urlhaus` | `URLHAUS_AUTH_KEY` | abuse.ch URLhaus lookup for URLs known to distribute malware. Obtain an Auth-Key through the abuse.ch Authentication Portal. The community API is fair-use; commercial or for-profit usage may require its enhanced commercial API. |
+| `virustotal` | `VIRUSTOTAL_API_KEY` | Optional multi-engine URL analysis. The public API is limited to 4 requests/minute and is not licensed for commercial products or services, so use a suitable paid/private plan if your deployment requires commercial use. By default, only confirmed malicious engine detections block; set `python.network.virusTotalBlockSuspicious` to `true` to also block suspicious verdicts. |
+
+Example configuration:
+
+```json
+"network": {
+  "enabled": true,
+  "providers": ["google-webrisk", "urlhaus"],
+  "maxRequestsPerRun": 3,
+  "maxResponseBytes": 12000,
+  "timeoutMs": 8000,
+  "virusTotalBlockSuspicious": false
+}
+```
+
+Set the matching credentials in `.env`. Only configure providers whose credentials and usage terms you have reviewed. Provider quotas are separate and may change; a provider's public/free tier may not be appropriate for a commercial deployment. The bot caches safe verdicts for five minutes and flagged verdicts for one hour (subject to a shorter provider expiry). To reduce disclosure of secrets, it sends the URL origin and path but strips query strings and fragments. Each provider therefore sees the checked host and path, but not signed query parameters.
+
+This is defense in depth, not a guarantee that arbitrary code is harmless. Keep the container resource limits enabled, update dependencies, and do not expose secrets to the Python worker.
+
+## Discord context coverage
+
+The bot builds a map of up to 120 readable public channels and samples recent messages from up to 20 other public channels per context refresh (cached for 45 seconds). A channel must be visible to `@everyone` as well as readable by the bot; private channels and private threads are not used, and staff-ish channel/category names are excluded by default. Supported context sources include text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs View Channel and Read Message History, plus Connect for voice-channel text chat.
+
 ## Dependency checks and tests
 
 ```bash

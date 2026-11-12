@@ -36,6 +36,7 @@ const cooldowns = new Map();
 let activeRequests = 0;
 const inFlight = new Set();
 const guildContextCache = new Map();
+const siblingContextCache = new Map();
 
 function log(level, message, detail = "") {
   const fn = level === "debug" ? console.log : console[level] || console.log;
@@ -50,6 +51,8 @@ function matchesConfiguredChannel(message, id) {
 }
 
 function getMode(message) {
+  // Only respond in channels visible to @everyone and readable by the bot.
+  if (!isPublicChannel(message.channel, message.guild)) return null;
   if (config.roast.enabled && matchesConfiguredChannel(message, roastChannelId)) return "roast";
   if (matchesConfiguredChannel(message, chatChannelId)) return "chat";
 
@@ -143,8 +146,8 @@ function channelTypeLabel(type) {
     case ChannelType.GuildText: return "text";
     case ChannelType.GuildAnnouncement: return "announcement";
     case ChannelType.GuildForum: return "forum";
-    case ChannelType.GuildVoice: return "voice";
-    case ChannelType.GuildStageVoice: return "stage";
+    case ChannelType.GuildVoice: return "voice text chat";
+    case ChannelType.GuildStageVoice: return "stage text chat";
     case ChannelType.GuildCategory: return "category";
     case ChannelType.PublicThread: return "public-thread";
     case ChannelType.PrivateThread: return "private-thread";
@@ -158,10 +161,46 @@ function isExcludedChannelName(name) {
   return patterns.some(p => lower.includes(String(p).toLowerCase()));
 }
 
-function scoreChannelForSampling(channel, currentChannelId) {
+function isPublicChannel(channel, guild = channel?.guild, botMember = guild?.members?.me) {
+  if (!channel || !guild || !botMember) return false;
+  if (channel.isThread?.() && channel.type !== ChannelType.PublicThread) return false;
+  const supportedTypes = [
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.PublicThread,
+    ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
+  ];
+  if (!supportedTypes.includes(channel.type)) return false;
+  const parentChannel = channel.isThread?.() ? channel.parent : channel;
+  const categoryName = parentChannel?.parent?.name;
+  if (isExcludedChannelName(channel.name) ||
+      isExcludedChannelName(parentChannel?.name) ||
+      isExcludedChannelName(categoryName)) return false;
+
+  const everyoneRole = guild.roles?.everyone;
+  if (!everyoneRole) return false;
+  const everyonePermissions = parentChannel?.permissionsFor(everyoneRole);
+  if (!everyonePermissions?.has(PermissionFlagsBits.ViewChannel)) return false;
+
+  const botPermissions = channel.permissionsFor(botMember);
+  if (!botPermissions?.has(PermissionFlagsBits.ViewChannel) ||
+      !botPermissions?.has(PermissionFlagsBits.ReadMessageHistory)) return false;
+  if ((channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) &&
+      !botPermissions.has(PermissionFlagsBits.Connect)) return false;
+  return true;
+}
+
+function scoreChannelForSampling(channel, currentChannelId, guild, botMember) {
   if (!channel || channel.id === currentChannelId) return -1;
-  if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) return -1;
-  if (isExcludedChannelName(channel.name)) return -1;
+  if (!isPublicChannel(channel, guild, botMember)) return -1;
+  const supportedTypes = [
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.PublicThread,
+    ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
+  ];
+  if (!supportedTypes.includes(channel.type)) return -1;
+  if (isExcludedChannelName(channel.name) || isExcludedChannelName(channel.parent?.name)) return -1;
   const hints = (contextCfg.priorityChannelNameHints || []).map(h => String(h).toLowerCase());
   const lower = String(channel.name || "").toLowerCase();
   let score = 1;
@@ -188,18 +227,21 @@ async function buildGuildMap(guild) {
     const lines = [
       `Server: ${guild.name} (id ${guild.id})`,
       `Approximate member count: ${guild.memberCount ?? "unknown"}`,
-      "Public channel map (name, type, category; private/staff-ish names filtered when possible):"
+      "Public channels the bot can actually read (private/staff-ish names are excluded; voice and stage text chats are included):"
     ];
 
+    const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
     const textLike = channels
-      .filter(c =>
-        c.type === ChannelType.GuildText ||
-        c.type === ChannelType.GuildAnnouncement ||
-        c.type === ChannelType.GuildForum
-      )
-      .filter(c => !isExcludedChannelName(c.name))
+      .filter(c => [
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement,
+        ChannelType.GuildForum,
+        ChannelType.PublicThread,
+        ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
+      ].includes(c.type))
+      .filter(c => isPublicChannel(c, guild, me))
       .sort((a, b) => a.rawPosition - b.rawPosition)
-      .slice(0, Math.max(10, Number(contextCfg.maxGuildChannelsListed) || 60));
+      .slice(0, Math.max(10, Number(contextCfg.maxGuildChannelsListed) || 120));
 
     for (const ch of textLike) {
       const parent = ch.parent?.name || categories.find(c => c.id === ch.parentId)?.name || "uncategorized";
@@ -220,13 +262,18 @@ async function buildGuildMap(guild) {
 
 async function sampleSiblingChannels(message) {
   if (!contextCfg.sampleOtherChannels || !message.guild) return "";
+  const cacheKey = `${message.guild.id}:${message.channelId}`;
+  const cacheTtl = Math.max(10_000, Number(contextCfg.siblingCacheTtlMs) || 45_000);
+  const cached = siblingContextCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < cacheTtl) return cached.text;
   const maxChannels = Math.max(0, Number(contextCfg.maxSampleChannels) || 0);
   const perChannel = Math.max(1, Math.min(10, Number(contextCfg.sampleMessagesPerChannel) || 4));
   if (!maxChannels) return "";
 
   const me = message.guild.members.me || await message.guild.members.fetchMe().catch(() => null);
+  if (!me) return "";
   const candidates = [...message.guild.channels.cache.values()]
-    .map(ch => ({ ch, score: scoreChannelForSampling(ch, message.channelId) }))
+    .map(ch => ({ ch, score: scoreChannelForSampling(ch, message.channelId, message.guild, me) }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(item => item.ch);
@@ -235,12 +282,7 @@ async function sampleSiblingChannels(message) {
   for (const ch of candidates) {
     if (picked.length >= maxChannels) break;
     try {
-      if (me) {
-        const perms = ch.permissionsFor(me);
-        if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
-          continue;
-        }
-      }
+      if (!isPublicChannel(ch, message.guild, me)) continue;
       picked.push(ch);
     } catch {
       // skip unreadable channels
@@ -258,7 +300,8 @@ async function sampleSiblingChannels(message) {
         .filter(m => m.content?.trim() && !m.author?.bot)
         .map(m => {
           const name = m.member?.displayName || m.author?.globalName || m.author?.username || "user";
-          return `  ${name}: ${String(m.content).replace(/\s+/g, " ").slice(0, 220)}`;
+          const sentAt = new Date(m.createdTimestamp).toISOString();
+          return `  [${sentAt}] ${name}: ${String(m.content).replace(/\s+/g, " ").slice(0, 220)}`;
         });
       if (!lines.length) continue;
       blocks.push(`#${ch.name} recent public messages:\n${lines.join("\n")}`);
@@ -266,11 +309,15 @@ async function sampleSiblingChannels(message) {
       log("debug", `Could not sample #${ch.name}`, error.message);
     }
   }
-  if (!blocks.length) return "";
-  return [
-    "Recent activity from other public channels (for situational awareness only; do not invent events beyond this):",
-    ...blocks
-  ].join("\n\n");
+  const text = blocks.length
+    ? [
+        "Recent activity from other public channels, including voice/stage text chats (for situational awareness only; do not invent events beyond this):",
+        ...blocks
+      ].join("\n\n")
+    : "";
+  siblingContextCache.set(cacheKey, { at: Date.now(), text });
+  while (siblingContextCache.size > 500) siblingContextCache.delete(siblingContextCache.keys().next().value);
+  return text;
 }
 
 function getCurrentChannelMeta(message) {
@@ -283,6 +330,25 @@ function getCurrentChannelMeta(message) {
     `Category: ${parent}`,
     `Channel topic: ${topic}`,
     `Channel id: ${ch?.id || "unknown"}`
+  ].join("\n");
+}
+
+function getTimeContext() {
+  const now = new Date();
+  const timeZone = contextCfg.timeZone || "UTC";
+  let local = "unavailable";
+  try {
+    local = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      dateStyle: "full",
+      timeStyle: "long"
+    }).format(now);
+  } catch {
+    // Keep the UTC timestamp available if the configured zone is invalid.
+  }
+  return [
+    `Current UTC time: ${now.toISOString()}`,
+    `Current configured time (${timeZone}): ${local}`
   ].join("\n");
 }
 
@@ -301,6 +367,7 @@ function getRoastTargetContext(message) {
   return [
     `Server: ${message.guild?.name || "unknown"}`,
     `Channel: #${message.channel?.name || "unknown"}`,
+    `Discord user ID: ${user?.id || "unavailable"}`,
     `Username: @${user?.username || "unknown"}`,
     `Global display name: ${user?.globalName || "not set"}`,
     `Server display name: ${member?.displayName || user?.globalName || user?.username || "unknown"}`,
@@ -319,6 +386,8 @@ async function buildSystemContext(message, mode) {
     parts.push(
       "Roast the person who sent the latest user turn in the supplied conversation history.",
       "Keep it concise, varied, witty, and playfully savage. Roast chosen names and message content, but do not awkwardly cram every profile detail into each reply.",
+      "Write a genuinely fresh joke for this exact moment. Avoid the last several punchlines and sentence structures in the supplied history; do not fall back to generic NPC, Wi-Fi, IQ, or repeated 'bro is' jokes.",
+      "The bot will create a real Discord reply mention for the target. Do not substitute a display name for a mention or invent a user ID.",
       "Do not target protected traits, disability, trauma, serious personal vulnerabilities, or encourage self-harm. Do not reveal private information or invent facts.",
       "The standard Discord bot API does not expose a user's profile bio/about-me. Never pretend to have read it.",
       "Output only the roast itself, with no preamble, transcript, speaker label, or sign-off.",
@@ -334,6 +403,8 @@ async function buildSystemContext(message, mode) {
 
   const channelMeta = getCurrentChannelMeta(message);
   if (channelMeta) parts.push(channelMeta);
+
+  parts.push(getTimeContext());
 
   const guildMap = await buildGuildMap(message.guild);
   if (guildMap) parts.push(guildMap);
@@ -376,13 +447,21 @@ async function handleMessage(message) {
     const messages = toModelMessages(history, config, message);
     const systemContext = await buildSystemContext(message, mode);
     const result = await generateReply(config, messages, mode, systemContext);
-    const chunks = splitMessage(result.text, config.limits.maxReplyChunks);
+    // If the bot is configured to send a normal channel message instead of a Discord reply,
+    // add a real user mention so roast notifications still reach the target account.
+    const responseText = mode === "roast" && !config.conversation.replyToTriggerMessage
+      ? `<@${message.author.id}> ${result.text}`
+      : result.text;
+    const chunks = splitMessage(responseText, config.limits.maxReplyChunks);
     if (!chunks.length) return;
     const allowedUserIds = [...new Set([
       ...history.map(item => item.author?.id),
       ...history.flatMap(item => [...(item.content || "").matchAll(/<@!?(\d{17,20})>/g)].map(match => match[1]))
     ].filter(id => /^\d{17,20}$/.test(String(id || ""))))];
-    const replyOptions = { allowedMentions: { parse: [], users: allowedUserIds, roles: [] } };
+    const replyOptions = {
+      // In roast mode, a Discord reply must notify the actual account, not merely print a nickname.
+      allowedMentions: { parse: [], users: allowedUserIds, roles: [], repliedUser: mode === "roast" }
+    };
     if (config.conversation.replyToTriggerMessage) {
       await message.reply({ ...replyOptions, content: chunks[0], failIfNotExists: false });
     } else {
