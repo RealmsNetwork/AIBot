@@ -51,6 +51,8 @@ function matchesConfiguredChannel(message, id) {
 }
 
 function getMode(message) {
+  // Only respond in channels visible to @everyone and readable by the bot.
+  if (!isPublicChannel(message.channel, message.guild)) return null;
   if (config.roast.enabled && matchesConfiguredChannel(message, roastChannelId)) return "roast";
   if (matchesConfiguredChannel(message, chatChannelId)) return "chat";
 
@@ -159,8 +161,30 @@ function isExcludedChannelName(name) {
   return patterns.some(p => lower.includes(String(p).toLowerCase()));
 }
 
-function scoreChannelForSampling(channel, currentChannelId) {
+function isPublicChannel(channel, guild = channel?.guild, botMember = guild?.members?.me) {
+  if (!channel || !guild || !botMember) return false;
+  const parentChannel = channel.isThread?.() ? channel.parent : channel;
+  const categoryName = parentChannel?.parent?.name;
+  if (isExcludedChannelName(channel.name) ||
+      isExcludedChannelName(parentChannel?.name) ||
+      isExcludedChannelName(categoryName)) return false;
+
+  const everyoneRole = guild.roles?.everyone;
+  if (!everyoneRole) return false;
+  const everyonePermissions = parentChannel?.permissionsFor(everyoneRole);
+  if (!everyonePermissions?.has(PermissionFlagsBits.ViewChannel)) return false;
+
+  const botPermissions = channel.permissionsFor(botMember);
+  if (!botPermissions?.has(PermissionFlagsBits.ViewChannel) ||
+      !botPermissions?.has(PermissionFlagsBits.ReadMessageHistory)) return false;
+  if ((channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) &&
+      !botPermissions.has(PermissionFlagsBits.Connect)) return false;
+  return true;
+}
+
+function scoreChannelForSampling(channel, currentChannelId, guild, botMember) {
   if (!channel || channel.id === currentChannelId) return -1;
+  if (!isPublicChannel(channel, guild, botMember)) return -1;
   const supportedTypes = [
     ChannelType.GuildText,
     ChannelType.GuildAnnouncement,
@@ -207,16 +231,7 @@ async function buildGuildMap(guild) {
         ChannelType.PublicThread,
         ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
       ].includes(c.type))
-      .filter(c => !isExcludedChannelName(c.name) && !isExcludedChannelName(c.parent?.name))
-      .filter(c => {
-        if (!me) return false;
-        const perms = c.permissionsFor(me);
-        if (!perms?.has(PermissionFlagsBits.ViewChannel)) return false;
-        if (!perms?.has(PermissionFlagsBits.ReadMessageHistory)) return false;
-        if ((c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice) &&
-            !perms.has(PermissionFlagsBits.Connect)) return false;
-        return true;
-      })
+      .filter(c => isPublicChannel(c, guild, me))
       .sort((a, b) => a.rawPosition - b.rawPosition)
       .slice(0, Math.max(10, Number(contextCfg.maxGuildChannelsListed) || 120));
 
@@ -250,7 +265,7 @@ async function sampleSiblingChannels(message) {
   const me = message.guild.members.me || await message.guild.members.fetchMe().catch(() => null);
   if (!me) return "";
   const candidates = [...message.guild.channels.cache.values()]
-    .map(ch => ({ ch, score: scoreChannelForSampling(ch, message.channelId) }))
+    .map(ch => ({ ch, score: scoreChannelForSampling(ch, message.channelId, message.guild, me) }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(item => item.ch);
@@ -259,14 +274,7 @@ async function sampleSiblingChannels(message) {
   for (const ch of candidates) {
     if (picked.length >= maxChannels) break;
     try {
-      const perms = ch.permissionsFor(me);
-      if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
-        continue;
-      }
-      if ((ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) &&
-          !perms.has(PermissionFlagsBits.Connect)) {
-        continue;
-      }
+      if (!isPublicChannel(ch, message.guild, me)) continue;
       picked.push(ch);
     } catch {
       // skip unreadable channels
