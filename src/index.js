@@ -164,9 +164,8 @@ function scoreChannelForSampling(channel, currentChannelId) {
   const supportedTypes = [
     ChannelType.GuildText,
     ChannelType.GuildAnnouncement,
-    ChannelType.GuildVoice,
-    ChannelType.GuildStageVoice,
-    ChannelType.PublicThread
+    ChannelType.PublicThread,
+    ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
   ];
   if (!supportedTypes.includes(channel.type)) return -1;
   if (isExcludedChannelName(channel.name) || isExcludedChannelName(channel.parent?.name)) return -1;
@@ -205,9 +204,8 @@ async function buildGuildMap(guild) {
         ChannelType.GuildText,
         ChannelType.GuildAnnouncement,
         ChannelType.GuildForum,
-        ChannelType.GuildVoice,
-        ChannelType.GuildStageVoice,
-        ChannelType.PublicThread
+        ChannelType.PublicThread,
+        ...(contextCfg.includeVoiceChannelChats ? [ChannelType.GuildVoice, ChannelType.GuildStageVoice] : [])
       ].includes(c.type))
       .filter(c => !isExcludedChannelName(c.name) && !isExcludedChannelName(c.parent?.name))
       .filter(c => {
