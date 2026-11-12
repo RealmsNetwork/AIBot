@@ -91,7 +91,7 @@ See `config.json` for provider models, system prompts, channel IDs, history leng
 
 ## Python interpreter and execution safety
 
-The AI can use a Python 3 interpreter for calculations, time/date work, and bounded data processing. It runs in a fresh Pyodide/WebAssembly worker for each execution, not inside the Discord bot's main JavaScript thread. The worker is terminated after the configured time limit; output, source length, concurrent runs, and worker memory are bounded. Pyodide does not provide shell commands, host filesystem access, subprocess execution, or native mining binaries.
+The AI can use a Python 3 interpreter for calculations, time/date work, and bounded data processing. It runs in a fresh Pyodide/WebAssembly worker for each execution, not inside the Discord bot's main JavaScript thread. The worker is terminated after the configured time limit; output, source length, concurrent runs, and its V8 heap are bounded. Docker Compose also caps the whole bot container at 1 GiB RAM, 1.5 CPU, and 128 processes. Pyodide does not provide shell commands, host filesystem access, subprocess execution, or native mining binaries.
 
 Network access is not a raw socket or unrestricted internet connection. Python code must use the `realmsnet.http_get(url)` helper, which permits HTTPS GET only, resolves and pins a public IPv4 destination, rejects private/local destinations and redirects, limits response size and request count, and applies a domain reputation check. Network access is fail-closed unless the reputation service is configured.
 
@@ -101,7 +101,7 @@ This is defense in depth, not a guarantee that arbitrary code is harmless. Keep 
 
 ## Discord context coverage
 
-The bot can build context from public channels it is permitted to view, including text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs the appropriate view/history permissions and, for voice-channel text chat, the required channel access. Private/staff-name exclusions remain configurable.
+The bot builds a map of up to 120 readable public channels and samples recent messages from up to 20 other public channels per context refresh (cached for 45 seconds). Supported context sources include text channels, announcements, public threads, and embedded text chat in voice/stage channels. It does not join voice calls or receive audio. Discord channel permissions still apply; the bot needs View Channel and Read Message History, plus Connect for voice-channel text chat. Private/staff-name exclusions remain configurable.
 
 ## Dependency checks and tests
 
