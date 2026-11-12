@@ -22,7 +22,7 @@ function formatCurrentTime(now = new Date(), timeZone = "UTC") {
       timeStyle: "long"
     }).format(now);
   }
-  return \`It's \${formatted}.\`;
+  return "It's " + formatted + ".";
 }
 
 module.exports = { isTimeQuestion, formatCurrentTime };
