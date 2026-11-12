@@ -11,7 +11,7 @@ const {
   PermissionFlagsBits
 } = require("discord.js");
 const { generateReply, toModelMessages, SafetyBlockedError, isSafetyBlockError } = require("./ai");
-const { parseTimeRequest } = require("./time-context");
+const { parseTimeRequest, stripUnrequestedDiscordTimestamps } = require("./time-context");
 
 const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "config.json"), "utf8"));
 const chatChannelId = process.env.CHAT_CHANNEL_ID || config.channels.chatChannelId;
@@ -381,7 +381,9 @@ function getRoastTargetContext(message) {
 }
 
 async function buildSystemContext(message, mode) {
-  const parts = [];
+  const parts = [
+    "AUTHORITATIVE TIME RULES: The live UTC and configured-zone clock context below is the only source of current date/time. Never guess the year, current time, Unix epoch, or Discord timestamp. Do not insert timestamps into jokes or casual replies. Only produce a Discord <t:...> tag when the user explicitly requests a timestamp or supplies one to convert; calculate it from the provided date/time, never from memory."
+  ];
 
   if (mode === "roast") {
     parts.push(
@@ -477,11 +479,12 @@ async function handleMessage(message) {
     const messages = toModelMessages(history, config, message);
     const systemContext = await buildSystemContext(message, mode);
     const result = await generateReply(config, messages, mode, systemContext);
+    const safeResultText = stripUnrequestedDiscordTimestamps(result.text, message.content);
     // If the bot is configured to send a normal channel message instead of a Discord reply,
     // add a real user mention so roast notifications still reach the target account.
     const responseText = mode === "roast" && !config.conversation.replyToTriggerMessage
-      ? `<@${message.author.id}> ${result.text}`
-      : result.text;
+      ? `<@${message.author.id}> ${safeResultText}`
+      : safeResultText;
     const chunks = splitMessage(responseText, config.limits.maxReplyChunks);
     if (!chunks.length) return;
     const allowedUserIds = [...new Set([
