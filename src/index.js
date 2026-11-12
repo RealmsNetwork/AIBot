@@ -36,6 +36,7 @@ const cooldowns = new Map();
 let activeRequests = 0;
 const inFlight = new Set();
 const guildContextCache = new Map();
+const siblingContextCache = new Map();
 
 function log(level, message, detail = "") {
   const fn = level === "debug" ? console.log : console[level] || console.log;
@@ -240,6 +241,10 @@ async function buildGuildMap(guild) {
 
 async function sampleSiblingChannels(message) {
   if (!contextCfg.sampleOtherChannels || !message.guild) return "";
+  const cacheKey = `${message.guild.id}:${message.channelId}`;
+  const cacheTtl = Math.max(10_000, Number(contextCfg.siblingCacheTtlMs) || 45_000);
+  const cached = siblingContextCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < cacheTtl) return cached.text;
   const maxChannels = Math.max(0, Number(contextCfg.maxSampleChannels) || 0);
   const perChannel = Math.max(1, Math.min(10, Number(contextCfg.sampleMessagesPerChannel) || 4));
   if (!maxChannels) return "";
@@ -290,11 +295,15 @@ async function sampleSiblingChannels(message) {
       log("debug", `Could not sample #${ch.name}`, error.message);
     }
   }
-  if (!blocks.length) return "";
-  return [
-    "Recent activity from other public channels (for situational awareness only; do not invent events beyond this):",
-    ...blocks
-  ].join("\n\n");
+  const text = blocks.length
+    ? [
+        "Recent activity from other public channels, including voice/stage text chats (for situational awareness only; do not invent events beyond this):",
+        ...blocks
+      ].join("\n\n")
+    : "";
+  siblingContextCache.set(cacheKey, { at: Date.now(), text });
+  while (siblingContextCache.size > 500) siblingContextCache.delete(siblingContextCache.keys().next().value);
+  return text;
 }
 
 function getCurrentChannelMeta(message) {
@@ -424,7 +433,12 @@ async function handleMessage(message) {
     const messages = toModelMessages(history, config, message);
     const systemContext = await buildSystemContext(message, mode);
     const result = await generateReply(config, messages, mode, systemContext);
-    const chunks = splitMessage(result.text, config.limits.maxReplyChunks);
+    // If the bot is configured to send a normal channel message instead of a Discord reply,
+    // add a real user mention so roast notifications still reach the target account.
+    const responseText = mode === "roast" && !config.conversation.replyToTriggerMessage
+      ? `<@${message.author.id}> ${result.text}`
+      : result.text;
+    const chunks = splitMessage(responseText, config.limits.maxReplyChunks);
     if (!chunks.length) return;
     const allowedUserIds = [...new Set([
       ...history.map(item => item.author?.id),
