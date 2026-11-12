@@ -6,6 +6,9 @@ services:
     container_name: realmsnetwork-aibot
     restart: unless-stopped
     init: true
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 128
     env_file:
       - .env
     read_only: true
