@@ -87,7 +87,7 @@ function zonedWallTimeToUtc(wallTime, timeZone) {
   }
 }
 
-function parseDateInput(value, timeZone = "UTC") {
+function parseDateInput(value, timeZone = "UTC", referenceNow = new Date()) {
   let input = String(value || "").trim().replace(/^(?:on|at)\s+/i, "").replace(/[?.!]+$/, "").trim();
   if (!input) return null;
   const zoneMatch = input.match(/\s+([A-Za-z_+-]+(?:\/[A-Za-z_+-]+)+)$/);
@@ -95,6 +95,35 @@ function parseDateInput(value, timeZone = "UTC") {
     timeZone = zoneMatch[1];
     input = input.slice(0, zoneMatch.index).trim();
   }
+
+  const relativeDay = input.match(/^(today|tomorrow|yesterday)(?:\s+(?:at\s+)?(.+))?$/i);
+  const relativeWeekday = input.match(/^(next|this)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)(?:\s+(?:at\s+)?(.+))?$/i);
+  if (relativeDay || relativeWeekday) {
+    const reference = validDate(referenceNow) || new Date();
+    const parts = Object.fromEntries(formatter(timeZone, {
+      year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(reference).filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+    const calendarDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+    let clock = relativeDay ? relativeDay[2] : relativeWeekday[3];
+    if (relativeDay) {
+      const amount = relativeDay[1].toLowerCase() === "tomorrow" ? 1 : relativeDay[1].toLowerCase() === "yesterday" ? -1 : 0;
+      calendarDate.setUTCDate(calendarDate.getUTCDate() + amount);
+    } else {
+      const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const target = weekdays.indexOf(relativeWeekday[2].toLowerCase());
+      const current = calendarDate.getUTCDay();
+      let amount = (target - current + 7) % 7;
+      if (relativeWeekday[1].toLowerCase() === "next" && amount === 0) amount = 7;
+      calendarDate.setUTCDate(calendarDate.getUTCDate() + amount);
+    }
+    const dateText = [
+      calendarDate.getUTCFullYear(),
+      String(calendarDate.getUTCMonth() + 1).padStart(2, "0"),
+      String(calendarDate.getUTCDate()).padStart(2, "0")
+    ].join("-");
+    return zonedWallTimeToUtc(dateText + " " + (clock || "00:00:00"), timeZone);
+  }
+
   const epoch = input.match(/^(?:unix\s+)?(?:timestamp\s+)?(-?\d{9,13})$/i);
   if (epoch) {
     const number = Number(epoch[1]);
@@ -149,7 +178,7 @@ function parseTimeRequest(value, options = {}) {
   if (dateCommand) {
     const requestedZone = dateCommand[1].match(/\s+([A-Za-z_+-]+(?:\/[A-Za-z_+-]+)+)$/);
     const displayZone = requestedZone ? requestedZone[1] : timeZone;
-    const date = parseDateInput(dateCommand[1], displayZone);
+    const date = parseDateInput(dateCommand[1], displayZone, now);
     if (!date) return "I couldn't parse that date/time. Include a clear date, time, and timezone, or use an ISO timestamp.";
     return formatTimestampResult(date, displayZone);
   }
@@ -170,7 +199,7 @@ function parseTimeRequest(value, options = {}) {
   const arithmetic = input.match(/^(add|plus|subtract|minus)\s+(.+?)\s+(?:to|from)\s+(.+)$/i);
   if (arithmetic) {
     const amount = parseDuration(arithmetic[2]);
-    const base = parseDateInput(arithmetic[3], timeZone);
+    const base = parseDateInput(arithmetic[3], timeZone, now);
     if (amount !== null && base) {
       const sign = /^(subtract|minus)$/i.test(arithmetic[1]) ? -1 : 1;
       return formatTimestampResult(new Date(base.getTime() + amount * sign), timeZone);
@@ -179,8 +208,8 @@ function parseTimeRequest(value, options = {}) {
 
   const difference = input.match(/^(?:difference\s+between|time between)\s+(.+?)\s+and\s+(.+)$/i);
   if (difference) {
-    const first = parseDateInput(difference[1], timeZone);
-    const second = parseDateInput(difference[2], timeZone);
+    const first = parseDateInput(difference[1], timeZone, now);
+    const second = parseDateInput(difference[2], timeZone, now);
     if (first && second) {
       const delta = Math.abs(second - first);
       const days = Math.floor(delta / 86400000);
@@ -193,7 +222,7 @@ function parseTimeRequest(value, options = {}) {
 
   if (/(?:unix|epoch|timestamp|discord\s+time)/i.test(input)) {
     const cleaned = input.replace(/(?:unix|epoch|timestamp|discord\s+time|convert|to|into|please)/gi, " ").trim();
-    const date = parseDateInput(cleaned, timeZone);
+    const date = parseDateInput(cleaned, timeZone, now);
     if (date) return formatTimestampResult(date, timeZone);
   }
   return null;
