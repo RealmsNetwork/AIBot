@@ -169,7 +169,7 @@ function scoreChannelForSampling(channel, currentChannelId) {
     ChannelType.PublicThread
   ];
   if (!supportedTypes.includes(channel.type)) return -1;
-  if (isExcludedChannelName(channel.name)) return -1;
+  if (isExcludedChannelName(channel.name) || isExcludedChannelName(channel.parent?.name)) return -1;
   const hints = (contextCfg.priorityChannelNameHints || []).map(h => String(h).toLowerCase());
   const lower = String(channel.name || "").toLowerCase();
   let score = 1;
@@ -209,7 +209,7 @@ async function buildGuildMap(guild) {
         ChannelType.GuildStageVoice,
         ChannelType.PublicThread
       ].includes(c.type))
-      .filter(c => !isExcludedChannelName(c.name))
+      .filter(c => !isExcludedChannelName(c.name) && !isExcludedChannelName(c.parent?.name))
       .filter(c => {
         if (!me) return false;
         const perms = c.permissionsFor(me);
@@ -250,6 +250,7 @@ async function sampleSiblingChannels(message) {
   if (!maxChannels) return "";
 
   const me = message.guild.members.me || await message.guild.members.fetchMe().catch(() => null);
+  if (!me) return "";
   const candidates = [...message.guild.channels.cache.values()]
     .map(ch => ({ ch, score: scoreChannelForSampling(ch, message.channelId) }))
     .filter(item => item.score > 0)
@@ -260,15 +261,13 @@ async function sampleSiblingChannels(message) {
   for (const ch of candidates) {
     if (picked.length >= maxChannels) break;
     try {
-      if (me) {
-        const perms = ch.permissionsFor(me);
-        if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
-          continue;
-        }
-        if ((ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) &&
-            !perms.has(PermissionFlagsBits.Connect)) {
-          continue;
-        }
+      const perms = ch.permissionsFor(me);
+      if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
+        continue;
+      }
+      if ((ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) &&
+          !perms.has(PermissionFlagsBits.Connect)) {
+        continue;
       }
       picked.push(ch);
     } catch {
