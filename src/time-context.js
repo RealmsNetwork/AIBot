@@ -228,11 +228,25 @@ function parseTimeRequest(value, options = {}) {
   return null;
 }
 
-function stripUnrequestedDiscordTimestamps(response, userMessage) {
+function stripUnrequestedDiscordTimestamps(response, userMessage, now = new Date(), timeZone = "UTC") {
   const request = String(userMessage || "");
-  const explicitlyRequested = /(?:<t:-?\d{9,13}(?::[tTdDfFR])?>|\b(?:unix|epoch|timestamp|date|time|clock)\b)/i.test(request);
+  const explicitlyRequested = /(?:\bwhat(?:'s| is)\s+(?:the\s+)?(?:current\s+)?(?:time|date|day|year)\b|\b(?:unix|epoch|timestamp)\b|\bconvert\b.{0,40}\b(?:date|time|timestamp)\b|\b(?:date|time)\b.{0,40}\b(?:convert|timestamp)\b|<t:-?\d{9,13}(?::[tTdDfFR])?>)/i.test(request);
   if (explicitlyRequested) return String(response || "");
-  return String(response || "").replace(/<t:-?\d{9,13}(?::[tTdDfFR])?>/gi, "");
+
+  const current = formatDateTime(now, timeZone);
+  let output = String(response || "").replace(/<t:-?\d{9,13}(?::[tTdDfFR])?>/gi, "");
+  // Correct a model-generated claim about what time it is. Historical dates in
+  // other contexts remain untouched; only explicit "it's/currently/the time is"
+  // assertions are rewritten from the actual host clock.
+  const month = "(?:January|February|March|April|May|June|July|August|September|October|November|December)";
+  const weekday = "(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\\s+)?";
+  const dateTime = new RegExp(
+    "\\b((?:it(?:'s| is)|currently|the time is|right now(?: it is| it's)?)\\s+)" +
+    weekday + month + "\\s+\\d{1,2},?\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:AM|PM)(?:\\s+[A-Z]{2,5})?",
+    "gi"
+  );
+  output = output.replace(dateTime, (_match, prefix) => prefix + current);
+  return output;
 }
 
 module.exports = {
