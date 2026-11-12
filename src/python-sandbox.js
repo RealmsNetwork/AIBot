@@ -120,10 +120,12 @@ async function fetchApprovedUrl(value, settings, requestCount) {
     const chunks = [];
     let size = 0;
     const maximum = Math.max(1024, Math.min(24_000, settings.maxResponseBytes || 12_000));
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > maximum) throw new Error("The response exceeded the Python network response limit.");
-      chunks.push(chunk);
+    if (response.body) {
+      for await (const chunk of response.body) {
+        size += chunk.length;
+        if (size > maximum) throw new Error("The response exceeded the Python network response limit.");
+        chunks.push(chunk);
+      }
     }
     return JSON.stringify({
       url: parsed.origin + parsed.pathname,
